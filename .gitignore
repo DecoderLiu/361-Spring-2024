@@ -48,5 +48,9 @@ po/*~
 # RStudio Connect folder
 rsconnect/
 
+<<<<<<< HEAD
+.DS_STORE
+=======
 ## Mac specific files
 .DS_Store
+>>>>>>> upstream/main

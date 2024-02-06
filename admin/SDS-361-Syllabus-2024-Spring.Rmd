@@ -16,15 +16,8 @@ knitr::opts_chunk$set(echo = TRUE)
 - Office: Kline 1141 (turn left out of the elevator)
 - Course Meeting: Tue/Thu, 9:00-10:15am, Location TBD
 - Office hours: Monday 1:30-2:30 on [Zoom](https://yale.zoom.us/j/91504731543?pwd=Q2oycVk4NG1NbHgyMExvNkUzWUFaUT09) and Thu 10:30-11:30, in my office.
-- Teaching Fellows, ULAs, and course manager, and office hours: 
-    - TF: TBD
-    - TF: TBD
-    - ULA: TBD
-    - ULA: TBD
-    - ULA: TBD
-    - ULA: TBD
-    - Course Manager: TBD
-- Midterms: TBD
+- Teaching Fellows, ULAs, and course manager, and office hours: see Canvas
+- Midterms: Tue Feb 20, 9am-10:15am, and Tue Apr 2, 9am-10:15am, both in our classroom
 - Final exam: Wed May 8, 9am-12pm, Room TBD
 - Schedule: See shared spreadsheet
 
@@ -83,7 +76,7 @@ There will be (roughly) weekly problem sets that focus on both theory and applic
 - Midterms: 22.5% each
 - Final: 35%
 
-**Submitting assignments.** You will submit assignments on Gradescope. The pull request assignment from the first problem set is the only thing you will submit on GitHub.  On Gradescope there is a place to submit your PDF only, and a place to submit other files (usually just an .Rmd file, but sometimes we'll have other files). 
+**Submitting assignments.** You will submit assignments on Gradescope. On Gradescope there is a place to submit your PDF only, and a place to submit other files (usually just an .Rmd file, but sometimes we'll have other files, e.g. RMD, HTML, GIF). 
 
 **Late Policy on Problem Sets.** You can submit 2 Problem Sets up to 48 hours late, no questions asked. Other than that, you need a dean's extension to submit late without penalty. Without a dean's extension, there is a 10% penalty per day. 
 
@@ -131,7 +124,9 @@ Class time will be a mix of live-coding in R, in-class small group activities, i
 
 **Office hours.** You are expected to attempt problems before seeking help in office hours. When you ask for help, clearly state what you have attempted, where you got stuck, and what specific question you have. 
 
-**Ed Discussion and GitHub Issues.** You will be able to ask questions on Ed Discussion and GitHub issues.  The same guidelines as office hours apply here: You are expected to attempt problems before seeking help, and when you ask for help, clearly state what you have attempted, where you got stuck, and what specific question you have. Use minimial reproducible examples when possible. 
+**Ed Discussion and GitHub Issues.** You will be able to ask questions on Ed Discussion and GitHub issues.  The same guidelines as office hours apply here: You are expected to attempt problems before seeking help, and when you ask for help, clearly state what you have attempted, where you got stuck, and what specific question you have. Use minimal reproducible examples when possible. 
+
+**Announcements.** I will make announcements on Canvas throughout the semester. You are expected to read these announcements, so I suggest that you make sure that Canvas notifications are turned on for announcements in this course. If you receive Canvas announcements in email, the formatting may be bad. If so, click the link to view announcements in the web browser. 
 
 
 ## Academic Integrity

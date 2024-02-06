@@ -1,0 +1,431 @@
+---
+title: "NBA games"
+author: "S&DS 361"
+date: "2024-01-30"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+In this section, we will 
+
+- Get experience asking interesting questions, and developing a strategy to answer those questions using data
+- Gain comfort with coding and working hands-on with data
+- Practice interactive data exploration and visualization with base R, `tidyverse` (mostly `dplyr` and `ggplot2`), `plotly`, and other tools.
+
+Packages and functions:
+
+- `dplyr`
+    - `filter`, `select`, `mutate`, `rename`, `summarize`, `arrange`, `group_by`, `*_join`, `pivot_longer`, `pivot_wider`, `ifelse`, `case_when`
+    - String multiple commands together with pipe operator
+- `ggplot`
+    - geom_’s: `geom_point`, `geom_jitter`, `geom_smooth`, `geom_line`, `geom_bar`, `geom_histogram`, `geom_tile`, `geom_segment`, `geom_text`
+    - `facet_wrap`, `facet_grid`
+- `ggplotly` and `plotly`
+- `pubtheme`, a package that contains a `ggplot` theme `theme_pub` and a `plotly` layout called `layoutpub` for creating data journalism-style data visualizations with color palettes and formatting similar to those used by media organizations like BBC, NY Times, and ESPN.
+- `DT`
+
+We will assume basic familiarity with `dplyr` and `ggplot2` functions. See Appendix for a refresher or an introduction. 
+
+## What questions can we ask?
+
+There are several questions we can ask about teams. Many of these can be asked about players too (as well as many other questions), but for we'll focus on teams now.
+
+**Team strength**
+
+- Can we estimate how good a team has been? 
+- Can we estimate how good a team will be going forward? 
+- Can we decompose a team's strength into offense, defense, and other components?
+
+**Game outcomes**
+
+- How likely is it that a team will win their next game? 
+- How many points a team will score in their next game?
+- By how many points will a team outscore, or be outscored, in their next game?
+
+**Season outcomes**
+
+- Can we predict how many wins that team will have this season? 
+- What chance does the team have of making the playoffs? 
+- To what extent does the strength of a team's division impact how likely they are to make the playoffs? 
+
+**Schedule**
+
+- Does a team's travel miles impact the outcome of a game? If so, are west coast teams at a disadvantage because they travel more? 
+- Does altitude (e.g. playing in Colorado, Utah, etc) impact the outcome of a game?  
+- Does the amount of rest between games impact a team's chance of winning? Are back-to-back games harder to win? 
+
+Eventually we'll answer all of these questions, to some extent, starting the team strength, game outcomes, and schedule related questions.
+
+## Intro to NBA games data
+
+We will start by working with game summary data, which provides the teams, game date, and game score, and other information for every regular season and playoff game. We can do a pretty decent job of answering many of these questions with this data. 
+
+
+First let's load in some packages we'll use, load the data, and look at the first and last two rows.
+
+```{r results=FALSE}
+library(tidyverse)
+library(pubtheme)
+d = readRDS('data/games.rds')
+head(d,2)
+tail(d,2)
+```
+
+Here is a description of the columns in this data frame.
+
+- `date`. The date of the game
+- `away`. The away team
+- `home`. The home team
+- `ascore`. The away team's score
+- `hscore`. The home team's score
+- `lg`. The league abbreviation.
+- `season`. The season in which the game took place. 
+- `season.type`. Regular season `reg` or postseason `post`.
+- `gid`. Game ID from the leagues website, ESPN or other data source.
+- `gkey`. Primary **key** for that **g**ame. 
+
+Note that `season` is a numeric column. For leagues whose regular season spans two years (e.g. NBA 2021-22, NHL 2021-22), the later year is used as the `season` (e.g. 2022). For other leagues where the regular season only spans one year (e.g. MLB, NFL), that year is used, so 2022 refers to the MLB season that started in Spring of 2022 and the NFL season that started in Fall of 2022. 
+
+We won't use the `gkey` column much for now. It is there to distinguish games from different leagues that may have the same `gid`. It is also more readable than `gid`.
+
+Each row in the data frame contains game summary data for one game from one of several leagues (NBA, NHL, NFL, MLB, CFB, and MCBB) 
+
+```{r}
+table(d$lg)
+```
+
+over many seasons
+
+```{r}
+table(d$season, d$lg)
+table(d$season, d$lg) %>% tail(30)
+```
+
+# Game level data
+
+For now, we'll focus on the NBA data from the 2020-21 and 2021-22 season. We work with regular season games only, and remove any columns we won't use in the near term. 
+
+```{r}
+d = d %>% 
+  filter(lg == 'nba', 
+         season %in% 2021:2022, 
+         season.type=='reg') %>%
+  select(date, 
+         away, home, 
+         ascore, hscore, 
+         season, gid)
+head(d)
+```
+
+## Interactive tables with `DT`
+
+Often we'll take a peak at data frames by using `head` or `tail`, or by printing the entire data frame. Sometimes it can be useful to display a data frame as a interactive table that we can play around with. We can do this using `datatable` from the `DT` package. With its default usage, we can sort by any column and search for any term.
+
+```{r}
+library(DT)
+datatable(d)
+```
+## Recommended options with `DT`
+
+```{r}
+datatable(d, 
+          width=480,
+          class='display compact nowrap', 
+          rownames=F, 
+          filter = 'top',
+          style='auto',
+          extensions = c('ColReorder',  'FixedHeader', 'KeyTable', 'Buttons'),
+          options = list(
+            orderClasses=T, ## highlight the ordered column 
+            #autowidth=T,  ##
+            dom = 'Brtip', ## https://datatables.net/reference/option/dom
+            buttons = c('copy', 'csv', 'excel'), ## download buttons
+            pageLength=30, ## rows per page
+            columnDefs=list(list(orderSequence = c('desc', 'asc'),
+                                 targets = '_all' )) ## sort desc first
+          # initComplete = JS( ## change colors of rows.
+          #      "function(settings, json) {",
+          #      paste0("$('tr.odd').css({'background-color': '", publightgray, "'});"),
+          #      paste0("$('tr.even').css({'background-color': '", pubbackgray, "'});"),
+          #      "}"))
+          )
+          
+          )
+          
+
+```
+
+More examples and options can be found here https://rstudio.github.io/DT or here https://datatables.net/examples/index. Also note that in https://rstudio.github.io/DT/options.html it says 
+
+> When there are some options that you want to set for multiple tables produced from the same R session, you can use the global option named DT.options. For example:"
+>
+> ```options(DT.options = list(pageLength = 5, language = list(search = 'Filter:')))```
+
+## Previous season scoring averages
+
+
+
+## Home advantage
+
+Let's see if we can detect any sort of home advantage. It will be more appropriate to do this in the context of regression later but for now the easiest way to do this is to find the average margin of victory by the home team. 
+
+```{r}
+d %>% 
+  mutate(diff = hscore - ascore) %>%
+  summarise(home.adv = mean(diff))
+  
+```
+
+
+## Home advantage by team
+
+We might think that home advantage varies by team, if certain venues are particularly difficult to play in. Let's see how much variation there is in home advantage. It will be more appropriate to do this in the context of regression later but for now we can look at score differential when a team is the home team, score differential when a team is the away team, and the difference between those. 
+
+```{r}
+dh = d %>% 
+  mutate(diff = hscore - ascore) %>%
+  group_by(home) %>%
+  summarise(home.adv = mean(diff)) 
+dh
+
+da = d %>% 
+  mutate(diff = ascore - hscore) %>%
+  group_by(away) %>%
+  summarise(away.adv = mean(diff))
+da
+
+dha = dh %>% 
+  left_join(da, 
+            by = c('home' = 'away')) %>%
+  mutate(diff = home.adv - away.adv) %>%
+  arrange(desc(diff))
+dha
+```
+There is some evidences of variation in home advantage among teams. We'll do more testing of this later.
+
+## Points previous vs current season
+
+Let's see if a team's average points scored from the previous season is related to their points scored in the current season.  First, we'll have to rearrange the data a little since teams can appear in both the home and away column. Ideally, we would have one column with the team name, and one column with the score. Each game would then have two rows, one for the away team and one for the home team. Here is one way to do that:
+
+```{r}
+
+```
+
+Note that, for example, the first two rows correspond to the first game, and contain the same information that was in the first row of the previous data frame. 
+
+Now we can compute average points scored by team for each season. 
+
+```{r}
+
+```
+We now have two rows per team, one for each season. If we want a scatter plot, we'll `pivot_wider` to have a column for each season. We don't want column names that start with a number (we would have to use the tick marks ``` `2022` ``` all the time), so we'll rename those too.
+
+```{r}
+
+```
+Now we can make a scatter plot. 
+
+```{r}
+
+```
+
+Current and previous season performances are related, despite the fact that some players, coaches, and front office personnel change teams in the offseason. Also, note the correlation is about `r round(cor(ds$s2021, ds$s2022),2)`:
+
+```{r}
+cor(ds$s2021, 
+    ds$s2022)
+```
+
+
+## Formatting with `pubtheme`
+The previous plot was functional and told us what we wanted to know. But let's start using `pubtheme`.  We'll copy and paste the scatter plot code from here and edit it for our data. 
+
+```{r fig.height=6, fig.width=6}
+title = 'Average Points in 2021-22 vs 2020-21'
+g = ggplot(ds, aes(x = s2021, 
+                   y = s2022, 
+                   label = team))+
+  geom_point()+
+  geom_text(hjust = -.1) +
+  labs(title = title,
+       x     = 'Average Points in 2020-21 Season',
+       y     = 'Average Points in 2021-22 Season')+
+  scale_x_continuous(limits=c(103, 121), breaks=c(103,112,121), oob=squish, labels=comma)+
+  scale_y_continuous(limits=c(103, 121), breaks=c(103,112,121), oob=squish, labels=comma)+
+  coord_cartesian(clip='off', expand=FALSE)+
+  theme_pub(type='scatter', base_size = 12) 
+
+
+print(g)
+```
+
+A few notes about the additional code for this plot
+
+- We can specify the `title` (and optionally `subtitle`), `x` axis label, `y` axis label, and an optional `caption` with `labs`. We omitted the `subtitle` and `caption` as there was no need.
+- With `scale_x_continuous` (resp. `scale_y_continuous`) we can specify the left and right (resp. upper and lower) `limits` for the axis, as well as where the grid lines show (`breaks`). `oob=squish` means if a point is slighly out of bounds, squish it in so that it is shown. `labels=comma` means if we have a number like `1000000` on the axis ticks, we want it to display with commas like `1,000,000`
+- `coord_cartesian(clip='off', expand=FALSE)` means if a point or some text is slightly outside the plotting range, we don't want it to be clipped, we still want to show it, and we don't want to `expand` the plot range, we want it to be exactly what we specified in `limits`. The default is to expand by 5% on each side. 
+
+The function `pub` can save us a lot of code if we are comfortable accepting the defaults for `scale*` and `coord*`. This results in the same plot as above.
+
+```{r}
+title = 'Average Points in 2021-22 vs 2020-21'
+g = ggplot(ds, aes(x = s2021, 
+                   y = s2022, 
+                   label = team)) +
+  geom_point() +
+  geom_text(hjust = -.1) +
+  labs(title = title,
+       x     = 'Average Points in 2020-21 Season',
+       y     = 'Average Points in 2021-22 Season')
+  
+
+
+
+
+```
+
+
+## Scoring vs stronger/weaker opponents
+
+Find opponents points. 
+
+```{r}
+
+```
+
+Add columns with conference and division to the data. 
+
+```{r}
+tms = read.csv('data/nba.teams.csv')
+
+tms = tms %>% 
+  arrange(conf, div) %>%
+  mutate(conf = paste0(toupper(substr(conf, 1, 1)), substr(conf, 2, nchar(conf))),
+         div  = paste0(toupper(substr(div , 1, 1)), substr( div, 2, nchar( div))), 
+         div  = factor(div, levels = unique(div)))
+head(tms)
+
+dg = dd %>%
+  left_join(tms %>% select(-conf), 
+            by = 'team') %>%
+  group_by(div) %>%
+  mutate(group = 
+           team %>% 
+           as.factor() %>% 
+           as.numeric() %>% 
+           as.character())
+
+head(dg)
+```
+
+Now we can make a scatter plot of points scored vs average points allowed by opponent, faceting by division. 
+
+```{r fig.width=6, fig.height=5}
+
+
+```
+
+# Schedule data
+
+Let's investigate a few aspects of schedule data, like how often teams play each other, how many days rest teams typically get, and how game outcomes are or are not affected by how many days rest teams get before playing their games. 
+
+## Schedule matrix grid plot
+
+Let's visualize how often teams play each other in a season. 
+
+```{r}
+library(tidyverse)
+library(pubtheme)
+library(gganimate)
+
+d = readRDS('data/games.rds')
+dgm = d %>% 
+  filter(lg == 'nba', 
+         season %in% 2005:2022, 
+         season.type == 'reg') %>%
+  mutate(home = case_when(home ==     'NJN'         ~ 'BKN', 
+                          home %in% c('NOH', 'NOK') ~ 'NOP', 
+                          home ==     'SEA'         ~ 'OKC', 
+                          TRUE ~ home), 
+         away = case_when(away ==     'NJN'         ~ 'BKN', 
+                          away %in% c('NOH', 'NOK') ~ 'NOP', 
+                          away ==     'SEA'         ~ 'OKC', 
+                          TRUE ~ away)) %>%
+  group_by(away, home, season) %>%
+  summarise(games = n()) %>%
+  ungroup() %>%
+  complete(away, 
+           home, 
+           season, 
+           fill = list(games = 0)) %>% ## new function! 
+  mutate(Games = as.character(games))
+head(dgm)
+```
+
+
+
+## Order character vectors using `factor`
+
+By default, R organizes the teams alphabetically. Instead of seeing teams alphabetically, we'll want to see them organized by division. So we'll use `factor` and specify the `levels` to be the order we want for both teams and divisions
+
+
+## Schedule matrix, ordered by division
+
+## Schedule matrix, faceted by division
+
+## Schedule matrix faceted by season
+
+## Animated Schedule Matrix 
+
+## Animated schedule matrix, MLB edition
+
+
+
+## Days rest by team
+
+```{r}
+dd = dd %>%
+  arrange(date) %>%
+  group_by(team) %>%
+  mutate(days.rest = c(NA, diff(date))) 
+
+dd %>% 
+  filter(team == 'PHI') %>% 
+  head()
+```
+
+```{r}
+
+```
+
+```{r fig.height = 6, fig.width = 6}
+
+
+
+```
+
+
+## Days rest and game outcomes
+Let's explore the relationship between `days.rest` and game outcomes. 
+
+```{r}
+
+```
+
+```{r}
+
+
+```
+
+```{r}
+
+
+```
+
+## Total distance travel by team (if time)
+

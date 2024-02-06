@@ -1,0 +1,124 @@
+---
+title: 'Notes on Pset 1 #2'
+author: "S&DS 361"
+date: "2024-01-25"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+There was some confusion, and a typo by me, for #2, so here are some notes. First let's load the data. 
+
+```{r}
+d = readRDS('data/water.usage.rds')
+head(d)
+```
+
+We want average water usage by year for each crop and source. The first incorrect thing we did is this 
+
+```{r}
+dd1 = d %>%
+  group_by(crop, src, year) %>%
+  summarise(value = mean(value))
+dd1
+
+dd2 = dd1 %>%
+  group_by(crop, src) %>%
+  summarise(value = mean(value))
+dd2
+```
+
+I meant to say `sum` here. What I meant was 
+
+```{r}
+dd3 = d %>%
+  group_by(crop, src, year) %>%
+  summarise(value = sum(value)) ## sum not mean
+dd3
+
+dd4 = dd3 %>%
+  group_by(crop, src) %>%
+  mutate(mean = mean(value))
+
+dd4
+```
+
+The data frame `dd3` has the total water usage for each crop, source, and year, for all census tracts in the US, and `dd4` is the average annual water usage for each crop and source. For example, for `barley` and `gwa`, the average annual water usage in the US is 1.19 km^3. These numbers match the table in the article, except that the surface water numbers are slightly off for some reason. 
+
+I'll leave it to you to compute the change and percent change. Hint: check out `pivot_wider`, the inverse of our friend `pivot_longer`. 
+
+
+## The two means we computed in class are not equal
+
+I wanted to return to the (incorrect) code we were working on in class, where many people thought that two different ways of computing the mean that we tried should have been equal.  Note that `dd2`, the mean across years of the values in `dd1`, is **not** exactly the same as simply finding the mean of the original data frame with all location-year combinations:
+
+
+```{r}
+dd5 = d %>% 
+  group_by(crop, src) %>%
+  summarise(value = mean(value)) %>% 
+  ungroup()
+dd5
+```
+
+```{r}
+dd5 %>% 
+  left_join(dd2, 
+            by = c('crop', 'src'), 
+            suffix = c('.dd5', '.dd2')) %>%
+  mutate(diff = value.dd5 - value.dd2) ## difference is not 0
+```
+
+The differences are small but not zero. To see why this is, let's simplify let's look at just `barley` and `gwa` and find the yearly averages. Let's also include a column showing the number of locations.
+
+```{r}
+dd6 = d %>% 
+  filter(crop == 'barley', 
+         src  == 'gwa') %>%
+  group_by(crop, src, year) %>%
+  summarise(mean  = mean(value), 
+            count = n(), 
+            sum   = sum(value))
+dd6
+```
+
+Note that the count column is not the same for every year. Uh oh. So averaging over locations first, and then averaging over years, is not the same as the average over all location-year combinations:
+
+```{r}
+mean(dd6$mean) ## this weights each year the same
+dd5 %>% 
+  filter(crop == 'barley', 
+         src  == 'gwa') %>%
+  select(value) %>%
+  as.numeric()
+```
+
+We would have to use a weighted mean to get the same result
+
+```{r}
+weighted.mean(dd6$mean, w = dd6$count) ## this weights each location-year the same
+sum(dd6$sum)/sum(dd6$count) ## same as above
+```
+
+Let's use mathematical notation. We'll again limit ourselves to `barley` and `gwa` for simplicity. Let $x_{jk}$ be the amount of groundwater `gwa` used by `barley` at location $j$ in year $k$. Let $n_k$ be the number of locations for which there is data in year $k$.  Note that there are 13 years. 
+
+```{r}
+length(unique(d$year ))
+```
+
+Then the yearly average water usage in year $k$ is
+
+$$ \frac{1}{n_k}\sum_{j=1}^{n_k} x_{jk} $$
+
+The average of that across years is 
+
+$$ \frac{1}{13}\sum_{k=2008}^{2020} \frac{1}{n_k}\sum_{j=1}^{n_k} x_{jk} $$
+
+Since $n_k$ depends on $k$, we can't pull it out of the sum.
+

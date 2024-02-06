@@ -1,0 +1,72 @@
+##########################################################################################
+#  About this file:
+#  The dataset described in this info file was downloaded in part or in whole
+#  from the Illinois Data Bank.
+#  This info file contains citation information, a permanent digital object identifier (DOI),
+#  and a listing of all data files available for this dataset.
+#  Keep this info file so in the future you'll know where you obtained
+#  the data files you've just downloaded.
+##########################################################################################
+
+[ DOI: ] 10.13012/B2IDB-4607538_V1
+[ Title: ] Data for Irrigation by crop in the Continental United States from 2008 to 2020
+[ Creators: ] Ruess, Paul ; Konar, Megan ; Wanders, Niko; Bierkens, Marc
+[ Publisher: ] University of Illinois at Urbana-Champaign
+[ Publication Year: ] 2023
+
+[ Citation: ] Ruess, Paul ; Konar, Megan ; Wanders, Niko; Bierkens, Marc (2023): Data for Irrigation by crop in the Continental United States from 2008 to 2020. University of Illinois at Urbana-Champaign. https://doi.org/10.13012/B2IDB-4607538_V1
+
+[ Description: ] Agriculture is the largest user of water in the United States. Yet, we do not understand the spatially resolved sources of irrigation water use by crop. The goal of this study is to estimate crop-specific irrigation water use from surface water withdrawals, total groundwater withdrawals, and nonrenewable groundwater depletion for the Continental United States. Water use by source is provided for 20 crops and crop groups from 2008 to 2020 at the county spatial resolution. 
+
+These results present the first national-scale assessment of irrigation by crop, county, water source, and year. In total, there are nearly 2.5 million data points in this dataset (3,142 counties; 13 years; 3 water sources; and 20 crops). This dataset supports the paper by Ruess et al (2023) in Water Resources Research, https://doi.org/10.1029/2022WR032804.
+
+When using, please cite as:
+Ruess, P.J., Konar, M., Wanders, N. , & Bierkens, M. (2023). Irrigation by crop in the Continental United States from 2008 to 2020, Water Resources Research, 59, e2022WR032804. https://doi.org/10.1029/2022WR032804
+
+
+[ Keywords: ] Water use; irrigation; surface water; groundwater; groundwater depletion; counties; crops; time series 
+[ License: ] CC0 - https://creativecommons.org/publicdomain/zero/1.0/
+[ Corresponding Creator: ] Megan  Konar
+[ Funder: ] U.S. National Science Foundation (NSF)- [ Grant: ] CBET-1844773[ Funder: ] U.S. National Science Foundation (NSF)- [ Grant: ] BCS-2032065 [ Funder: ] U.S. National Science Foundation (NSF)- [ Grant: ] CBET-2115405 
+[ Related Article: ] Ruess, P.J., Konar, M., Wanders, N. , & Bierkens, M. (2023). Irrigation by crop in the Continental United States from 2008 to 2020, Water Resources Research, 59, e2022WR032804. https://doi.org/10.1029/2022WR032804, https://doi.org/10.1029/2022WR032804
+[ Files (40): ] 
+. readme.txt, 1.03 KB
+. gwa_2008.csv, 2.17 MB
+. gwa_2009.csv, 2.17 MB
+. gwa_2010.csv, 2.1 MB
+. gwa_2011.csv, 2.17 MB
+. gwa_2012.csv, 2.17 MB
+. gwa_2013.csv, 2.17 MB
+. gwa_2014.csv, 2.17 MB
+. gwa_2015.csv, 2.1 MB
+. gwa_2016.csv, 2.17 MB
+. gwa_2017.csv, 2.17 MB
+. gwa_2018.csv, 2.17 MB
+. gwa_2019.csv, 2.17 MB
+. gwa_2020.csv, 2.17 MB
+. gwd_2008.csv, 207 KB
+. gwd_2009.csv, 203 KB
+. gwd_2010.csv, 210 KB
+. gwd_2011.csv, 209 KB
+. gwd_2012.csv, 205 KB
+. gwd_2013.csv, 203 KB
+. gwd_2014.csv, 205 KB
+. gwd_2015.csv, 204 KB
+. gwd_2016.csv, 202 KB
+. gwd_2017.csv, 201 KB
+. gwd_2018.csv, 202 KB
+. gwd_2019.csv, 203 KB
+. gwd_2020.csv, 203 KB
+. sw_2008.csv, 2.17 MB
+. sw_2009.csv, 2.17 MB
+. sw_2010.csv, 2.1 MB
+. sw_2011.csv, 2.17 MB
+. sw_2012.csv, 2.17 MB
+. sw_2013.csv, 2.17 MB
+. sw_2014.csv, 2.17 MB
+. sw_2015.csv, 2.1 MB
+. sw_2016.csv, 2.17 MB
+. sw_2017.csv, 2.17 MB
+. sw_2018.csv, 2.17 MB
+. sw_2019.csv, 2.17 MB
+. sw_2020.csv, 2.17 MB

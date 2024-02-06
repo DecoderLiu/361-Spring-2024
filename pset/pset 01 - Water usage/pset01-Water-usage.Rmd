@@ -1,0 +1,294 @@
+---
+title: "Pset 1 - Water usage"
+author: "425/625"
+date: "Spring 2024"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(pubtheme)
+```
+
+## Introduction 
+
+Water scarcity is a major issue in many parts of the world. According to the [United Nations](https://www.un.org/en/climatechange/science/climate-issues/water), "About two billion people worldwide don't have access to safe drinking water today ([SDG Report 2022](https://unstats.un.org/sdgs/report/2022/Goal-06/?_gl=1*aquqlc*_ga*MTAzMzA2ODI0Mi4xNzA0NjYzNjY3*_ga_TK9BQL5X7Z*MTcwNDY2NzIyMS4yLjEuMTcwNDY2NzI1My4wLjAuMA..)), and roughly half of the world’s population is experiencing severe water scarcity for at least part of the year ([IPCC](https://www.ipcc.ch/report/ar6/wg2/downloads/outreach/IPCC_AR6_WGII_FactSheet_FoodAndWater.pdf)). These numbers are expected to increase, exacerbated by climate change and population growth ([WMO](https://public.wmo.int/en/media/press-release/protect-our-people-and-future-generations-water-and-climate-leaders-call-urgent))."
+
+
+In this problem set, we will investigate water usage estimates by crop in the United States. The `.csv` for this data set comes from [here](https://databank.illinois.edu/datasets/IDB-4607538) (by checking Select All and clicking Get Custom Zip) and the associated academic journal article is [here](https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2022WR032804). See [this thread](https://twitter.com/MeganKonar/status/1618943789279875074?s=20&t=nrjRJQ2tuEO0GyTwCK-XVA) on X for a summary.  
+
+Read the academic article to familiarize yourself with the basics of the water usage data. You don't need to know how these water usage levels were estimated, so you can skip over those parts. We are going to focus on visualizing the water levels using the estimates that they generated. 
+
+## Data preparation
+
+The `.zip` file `rawdata/DOI-10-13012-b2idb-4607538_v1.zip` contains one `.csv` file per source (SWW, GWW, GWD) per year from 2008 to 2020. There are also a couple of `.txt` files in the folder. We can use `unzip` with `list = TRUE` to see what's in the `.zip` file. 
+
+```{r}
+unzip(zipfile = 'rawdata/DOI-10-13012-b2idb-4607538_v1.zip', 
+      list = TRUE) ## this lists the filename, but does not unzip the file
+```
+
+Before summarizing/visualizing this data, we'll want to join these data sets. We could certainly unzip the file manually. We can also do this in R using `unzip`. 
+
+```{r eval=F}
+unzip(zipfile = 'rawdata/DOI-10-13012-b2idb-4607538_v1.zip', 
+      junkpaths = TRUE, 
+      exdir = 'rawdata') ## gets rid of paths, keeps only filenames 
+```
+
+
+#### 1. Join data
+First, let's create a data set with all years/crops together in one data frame. Below is some code to help you get started. Add comments to each place there is `##` to explain what the chunk of code is doing. Then add code to the `Tranforming data` Section to transform the data into a data frame with 5 columns: `GEOID`, `crop`, `source`, `year`, and `value` (indicating km^3 of water).
+
+Note that `eval = F` at the start of the chunk will prevent this chunk from evaluating when you knit the document. You can temporarily remove it if you'd like, but you'll want to add it back before knitting the document so that knitting takes less time.
+
+```{r eval = F}
+sources = c('gwd', 'sw', 'gwa')
+years = 2008:2020
+d = NULL
+
+for(s in sources){
+  cat(s, '') ## show progress
+  
+  for(year in years){
+    cat(year, '') ## show progress
+  
+    ## 
+    filename = paste0('rawdata/', s, '_', year, '.csv')
+    df = read.csv(filename)
+    head(df)
+    
+    
+    ## Tranform data #######################################
+    ## Use `pivot_longer`, `separate`, and/or other functions to transform this
+    ## data frame into a data frame with 5 columns: 
+    ## GEOID, crop, source, year, and value (indicating km^3 of water)
+    ##
+    ## You can use the code below to check your work.
+    ##
+    df <- df %>%
+      pivot_longer(cols = -"GEOID", names_to = "crop", values_to = "value") %>%
+      separate(col = crop, into = c("src", "crop","year"), sep = "\\.")
+    
+    ## end of transforming data ############################
+    
+    ## 
+    d = rbind(d, df)
+  }
+  
+  cat('\n') ## start a new line before showing progress for the next source
+}
+head(d)
+tail(d)
+```
+
+
+## Data exploration and summaries
+
+Let's load the data we'll use for the rest of the assignment. This is the data set created in #1, so if you were unable to finish #1, you can still do the rest of the assignment. 
+
+```{r}
+d = readRDS('data/water.usage.rds')
+head(d)
+```
+
+
+#### 2. Summaries of data 
+
+Find the **annual** mean, the change from 2008 to 2020, and the percent change from 2008 to 2020, for each crop and each source (SWW, GWW, GWD). 
+
+```{r}
+dd1 = d %>%
+  group_by(crop, src, year) %>%
+  summarize(value = sum(value)) %>%
+  group_by(crop, src) %>%
+  mutate(mean = mean(value))
+
+dd1
+```
+
+
+```{r}
+dd2 <- dd1 %>%
+  pivot_wider(names_from = year, values_from = value) %>%
+  mutate(change = `2020` - `2008`,
+         percent_change = (change/`2008`)*100) %>%
+  select(-`2009`, -`2010`, -`2011`, -`2012`, -`2013`, -`2014`, -`2015`, -`2016`, -`2017`, -`2018`, -`2019`, -`2020`, -`2008`)
+
+dd2
+
+```
+
+## 3. Convert Table 2 to a visualization
+
+Create a visual representation of the information in Table 2. Create a visualization (or visualizations) that contains mean, change, and percent change in water usage from each crop and source. 
+
+```{r, width= 10, height = 14}
+# Function to create a plot with an enhanced appearance
+create_plot <- function(data, y_value, y_label, title) {
+  data %>%
+    ggplot(aes(x = fct_reorder(str_to_title(crop), get(y_value)), y = get(y_value), fill = src)) +
+    theme_pub() + # Use the pubtheme package
+    geom_col(position = "dodge", width = 0.8) + # Adjust width of the bars
+    labs(title = title, x = "Crop", y = y_label) +
+    theme_minimal(base_size = 14) + # Use a minimal theme with a base font size
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+          legend.position = "top", # Move legend to the bottom
+          legend.title = element_blank(), # Remove the legend title
+          plot.title = element_text(face = "bold", size = 18), # Bold and larger plot title
+          axis.title = element_text(size = 12)) # Larger axis titles 
+}
+
+dd2 <- dd2 %>%
+  mutate(crop = case_when(
+    crop == "other_sctg2" ~ "Other Grains",
+    crop == "other_sctg3" ~ "Other Produce",
+    crop == "other_sctg4" ~ "Other Animal Feed",
+    TRUE ~ as.character(crop) # Keep other crop names as they are
+  ))
+
+# Plot for Mean Water Usage
+mean_plot <- create_plot(dd2, "mean", "Annual Mean Water Usage (km^3)", "Annual Mean Water Usage")
+
+# Plot for Change in Water Usage
+change_plot <- create_plot(dd2, "change", "Change in Water Usage (km^3)", "Change in Water Usage from 2008 to 2020")
+
+# Plot for Percent Change in Water Usage
+percent_change_plot <- create_plot(dd2, "percent_change", "Percent Change in Water Usage (%)", "Percent Change in Water Usage from 2008 to 2020")
+
+# Print the plots
+print(mean_plot)
+print(change_plot)
+print(percent_change_plot)
+
+```
+
+
+# Figure 4
+
+Figure 4 shows the average water usage by crop and source.
+
+- A. average irrigation water usage by source, colored by crop, 
+- B. average irrigation water usage by crop, colored by source 
+
+Two other options for visualizing a numeric variable broken down by two different categorical variable would be a tile plot/grid plot (e.g. https://github.com/bmacGTPM/pubtheme?tab=readme-ov-file#grid-plot) and a mosiac plot (https://haleyjeppson.github.io/ggmosaic/).
+
+
+## 4. Create a tile plot/grid plot of the data in Figure 4. 
+
+```{r}
+
+grid_plot = ggplot(dd2, 
+           aes(x    = crop, 
+               y    = src, 
+               fill = mean)) +
+  geom_tile(linewidth   = 0.4, 
+            show.legend = T, 
+            color       = pubdarkgray) +
+  coord_fixed() +
+  scale_fill_gradient(low      = pubgradgray,
+                      high     = pubblue, 
+                      na.value = pubmediumgray, ## same color as below
+                      oob      = squish,
+                      breaks   = c(1, 10, 30)) +
+    
+  labs(title    = 'Average water usage by crop and source',
+       fill = 'Average water usage',
+       x = 'Crop',
+       y = 'Source') +
+  theme(axis.text.x = element_text(angle = 90, hjust=1),
+        axis.ticks.x=element_blank(), axis.ticks.y=element_blank(),
+        panel.background = element_blank())
+
+
+grid_plot
+
+```
+
+## 5. Create a mosiac plot of the data in Figure 4. 
+
+```{r}
+library(ggmosaic)
+
+mosaic_plot = dd2 %>% arrange(desc(mean)) %>%
+     ggplot() +
+   geom_mosaic(aes(x = product(src,crop), fill=src, weight = mean), show.legend = FALSE) +
+    labs(title = "Average irrigation water usage by source and crop (kmˆ3)",
+    x = 'Crop', y = "Source") +
+    theme(axis.text.x = element_text(angle = 90, hjust=1, vjust=0.25),
+    axis.ticks.x=element_blank(), axis.ticks.y=element_blank(),
+    panel.background = element_blank())
+
+
+mosaic_plot
+
+```
+
+## 6. What are the benefits (other than it fits on one plot) and drawbacks of these two plots?
+
+The grid plot does well on showing the average water usage by crop and source, and it emphasizes on the crop with high average on water usage. But it is difficult to compare the water usage across crops. Especially, the scales of the gradient color is hard to balance given that some crops of water usage like 'Other Animal Feed' has a much greater mean than the rest. The audience may not be able to see the differences in water usage across crops with little water usage. 
+
+The mosaic plot is similar to the grid plot as it emphasizes the emphasizes on the crop with great average water usage. It is easier to compare the water usage across crops, but it is difficult to compare the water usage across sources. The audience may not be able to see the differences in water usage across sources with little water usage as well.
+
+
+## 7. Figure 6 
+
+Figure 6 uses a different color scale for each plot. Discuss the benefits and drawbacks of this choice. What was the main purposes of this figure? Given the main purpose, would you recommend using the same color scale, or different color scales, for each plot?
+
+The main purpose of this figure is to demonstrate the details of water usage in the States in 2020, including the distributions of water uasge of each crop and source and the differences between each crop and source. The different color scales for each plot is beneficial because it is easy to tell the distribution of water usage for each crop and source, i.e., in which region of America consumes the most amount of water. The drawback of this choice is that it is difficult to compare the water usage across crops and sources. I would recommend using different color scales for each plot as the purpose of this figure is to show the distribution of water usage for each crop and source, not to compare the water usage across crops and sources.
+
+
+## 8. Figure 8 
+
+Figure 8 also uses a different color scale for each plot.  Discuss the benefits and drawbacks of this choice. What was the main purposes of this figure? Given the main purpose, would you recommend using the same color scale, or different color scales, for each plot?
+
+The main purpose of figure 8 is to show the difference of PCR estimates of water usage and the USGS reported water usage. The good thing of using a different scale for each plot is that it is easy to tell where in the States does the estimates of PCR and the USGS reported values differ the most. The drawback of this choice is that it is difficult to compare the PCR estimates of water usage and the USGS reported water usage across different years. Given that in the original paper, the authors emphasize on the biased estimation of PCR in western areas and try to argue that the PCR model has potential issues, I would say using different scales is better for this purpose. This is because we don't need to show that the error of PCR estimates actually decreases over time, but we need to show that the PCR estimates are biased in the western areas.
+
+
+## 9. Breakdown of GWW
+The paper notes in Section 3.1 that $GWW = GWW_{sustainable} + GWW_{unsustainable}$, and that $GWD = GWW_{unsustainable}$. Create a visualization showing the percent of GWW that is GWD for each crop. Use the mean values for water usage. 
+
+```{r}
+dd2 %>%
+  filter(src == "gwa" | src == "gwd") %>%
+  select(crop, src, mean) %>%
+  pivot_wider(names_from = src, values_from = mean) %>%
+  mutate(percent_of_GWD = gwd/gwa * 100) %>%
+  ggplot(aes(x = reorder(crop,percent_of_GWD), y = percent_of_GWD, label = round(percent_of_GWD,1))) +
+  geom_col() +
+  geom_text(vjust = -0.25, size = 3) + 
+  labs(title = "Percent of GWW that is GWD for each crop",
+       x = "Crop",
+       y = "Percent of GWW that is GWD") +
+  theme(axis.text.x = element_text(angle = 90, hjust=1, vjust=0.25),
+        axis.ticks.x=element_blank(), axis.ticks.y=element_blank())
+
+```
+
+
+## 10. Custom visualization
+What is another question you have about this data? Create a visualization that attempt to answer your question. 
+
+Question: What is the ratio of gwa versus sw for each crop using the mean value?
+
+```{r}
+dd2 %>%
+  filter(src == "gwa" | src == "sw") %>%
+  select(crop, src, mean) %>%
+  pivot_wider(names_from = src, values_from = mean) %>%
+  mutate(ratio = gwa/sw) %>%
+  ggplot(aes(x = reorder(crop,ratio), y = ratio, label = round(ratio,1))) +
+  geom_col() +
+  geom_text(vjust = -0.25, size = 3) + 
+  labs(title = "Ratio of gwa versus sw for each crop",
+       x = "Crop",
+       y = "Ratio of gwa versus sw") +
+  theme(axis.text.x = element_text(angle = 90, hjust=1, vjust=0.25),
+        axis.ticks.x=element_blank(), axis.ticks.y=element_blank())
+
+```
+
