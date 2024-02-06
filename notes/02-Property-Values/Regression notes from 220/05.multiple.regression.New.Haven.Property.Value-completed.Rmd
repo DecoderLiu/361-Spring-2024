@@ -1,0 +1,173 @@
+---
+title: "Multiple regression"
+author: "S&DS 220"
+date: "Week 11, Day 1"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, 
+                      warning=FALSE, 
+                      message=FALSE,
+                      comment=NA, 
+                      fig.align='center', 
+                      fig.width=5, 
+                      fig.height=5)
+library(tidyverse)
+library(GGally)
+```
+
+There are several ways we might try to improve a linear model.  One of those ways is to consider including additional predictor variables in the model.  With $k\geq 1$ predictor variables, or linear model becomes 
+
+$$ y = \beta_0 + \beta_1x_1 + \beta_2x_2 + \cdots + \beta_kx_k + \epsilon $$
+
+where $\epsilon$ is still assumed to have mean 0 and variance $\sigma^2$ that does not depend on $x_j$.  Note that if $k=1$, this reduces to our simple linear regression model
+
+$$ y = \beta_0 + \beta_1x_1 + \epsilon $$
+
+The coefficients $\beta_j$ in the model have a similar interpretation as before, in that they estimate the effect that a unit change in $x_j$ has on $y$. But this time there's an important phrase to add:  it is the change in $y$ for every unit change in $x_j$, *holding all other variables constant*.  For example, $\beta_1$ is an estimate of the rate of change in $y$ corresponding to a unit change in $x_1$, holding $x_2, x_3, ..., x_k$ constant.  
+
+
+## Estimates, standard errors, p-values, confidence intervals for $\beta_j$
+For a multiple regression model, the estimates, standard errors, p-values, and confidence intervals for $\beta_j$ can all be found in the same way as before.  Let's try a multiple regression with our housing data, with value as the dependent variable, and using two predictors, living and land.  
+
+### Example with our New Haven Property Value data
+```{r}
+d = read.csv('NewHavenHousing.csv')
+
+## remove houses over $500k, 5000 sq ft, and 10 acres
+d = d[d$living<=5000 & d$value<=500000 & d$land<=10,]   
+d = d %>% filter(living<=5000, value<=500000, land<=10) ## another way to do the same thing
+
+```
+
+We'll fit a simple linear regression model with `value` as the outcome and `living` as the predictor, just like we did before.  We'll also fit a multiple regression model where we include one additional predictor, `land`. 
+
+```{r}
+m1 = lm(value ~ living, data=d)
+m2 = lm(value ~ living + land, data=d)
+summary(m2)
+```
+We see that the output of the `summary` function for `m2` still gives the estimate for the intercept, and now gives the estimates for both predictor variables, as well as the standard errors and p-values for each predictor.  Many of the interpretations of these quantities remain the same, although as mentioned before, the interpretation of the coefficients is slightly different.  For example, the coefficient for `living` is about 88, which means that the expected increase in `value` for a unit increase in living area is 88, *holding all other variables constant*.  
+
+In this case, "all other variables" means `land` area.  In other words, the 88 is giving us the change in `value` for a unit increase in `living`,  assuming that  `land` stays the same.  Likewise, the coefficient for `land` is about 27636, which means that the expected change in `value` for a unit increase in `land`, assuming `living` stays the same, is 27636.
+
+## Adjusted $R^2$
+For simple linear regression, we used $R^2$ to assess the fit of the model, and to compare it to other models.  One of the downsides of using $R^2$ for multiple regression models is that $R^2$ always increases when we add predictor variables to the model.  This makes it difficult to determine whether or not including an additional predictor is beneficial.  An ideal metric for assessing the fit of a model would decrease if a variable that is not useful is added to the model.
+
+A common alternative to using $R^2$ is to use "adjusted $R^2$", which is similar to $R^2$, but contains an adjustment for the number of predictors used.  It is not the case that adjusted $R^2$ increases when you add a new predictor variable.  If the predictor does not have a relationship to the dependent variable, or if the new predictor does not contain any new information that isn't already included in one of the variables, the adjusted $R^2$ will decrease. This provides a useful way to compare two models with different number of variables, or to decide which variables are useful to include in the model.  
+
+Note that "Adjusted R-squared" appears in the output of `summary`.  It can also be accessed directly like this: 
+```{r}
+summary(m1)$adj.r.squared ## living
+summary(m2)$adj.r.squared ## living and land
+```
+
+In our case, we see that the adjusted $R^2$ increased slightly when we included the second predictor `land` in the model so we could conclude that `land` contains *some* useful information that could improve our predictions. If the difference in adjusted R^2 is small, we could choose to remove the extra variable. In this case, we'll leave it in. 
+
+## Predictions, confidence intervals, prediction intervals
+We can get predictions, CIs, and PIs in the same way we did for simple linear regression:
+
+```{r}
+d$yhat       = predict(m2, newdata=d)
+d$yhat.lower = predict(m2, newdata=d, interval='confidence', level=0.95)[,'lwr']
+d$yhat.upper = predict(m2, newdata=d, interval='confidence', level=0.95)[,'upr']
+d$y.lower    = predict(m2, newdata=d, interval='prediction', level=0.95)[,'lwr']
+d$y.upper    = predict(m2, newdata=d, interval='prediction', level=0.95)[,'upr']
+head(d[,c('address', 'value', 'living', 'land', 'yhat', 
+          'yhat.lower', 'yhat.upper', 'y.lower', 'y.upper')])
+```
+Our CIs seems reasonable, but the PIs contain negative numbers, which is impossible.  We'll discuss this issue at a later time. 
+
+## Collinearity
+One thing we need to be cautious of when using more than one predictor variable is whether or not the predictors are highly correlated.  Collinearity refers to when two or more predictors are highly correlated. When this occurs, it can have undesired consequences, such has getting a coefficient that has a sign that is opposite of what is expected, or a predictor that is significant by itself, but when included with other variables it becomes insignificant.
+
+Here's an extreme example.  Suppose we had another variable that we'll call `new.var` in our data set that is exactly two times the `living` column, and we try to build a linear model. First, note that the correlation between these two variables is 1.  
+```{r}
+d$new.var = 2*d$living
+head(d)
+cor(d$new.var, d$living)
+```
+
+This is because for any $x$ and $y$ and constant $c$, we have  
+
+$$ \mathrm{cor}(cx , y) = \mathrm{cor}(x,y)\\
+   \mathrm{cor}(x+c, y) = \mathrm{cor}(x,y)$$
+
+and because $\mathrm{cor}(x,x)=1$.   
+   
+In other words, if you multiply one of the variables by a constant, or add a constant to one of the variables, the correlation does not change.  In our case, we have
+
+$$ \mathrm{cor(2\, living}, \mathrm{living}) = 
+   \mathrm{cor(living}    , \mathrm{living}) = 1 $$
+
+Let's see what happens when we try to include two perfectly correlated variables in the model.
+```{r}
+m2a = lm(value ~ living + new.var, data=d)
+summary(m2a)
+
+```
+The output indicates `Coefficients: (1 not defined because of singularities)` and has `NA`'s in the output for `new.var`. This happens because `R` is detecting that `new.var` is simply a scalar multiple of `living`, which causes an error in the algorithm it is using to determine the coefficients in the model, and it is automatically removing `new.var`.
+
+Intuitively, it makes sense that it is useless to include `new.var` in the model.  There is a deterministic relationship between `new.var` and `living`, so if we know the value of one of them, we know the value of the other. Both variables contain the same information, so if we include `new.var` in the model, we are not giving the model any new information that it can use to predict `value`.  
+
+What if instead of `new.var` being perfectly correlated with `living`, we have a `new.var` that has a very high correlation, but less than exactly 1? 
+
+```{r}
+## new.var is 2*living + small amount of randomness
+d$new.var = 2*d$living + rnorm(nrow(d), mean=0, sd=1) 
+head(d)
+cor(d$new.var, d$living, use='pairwise.complete.obs')
+```
+Let's see what happens when we include this in the model.
+
+```{r}
+m2b= lm(value ~ living + new.var, data=d)
+summary(m2b)
+```
+This time there is actually an estimate for both coefficients, but we are seeing some strange behavior.  Here the coefficient for `living` increased significantly, has a much higher standard error, and isn't significant.  The predictor `new.var` isn't significant either, and has a negative coefficient.  The adjusted $R^2$ is 0.62, the same as before, despite the fact that neither coefficient is significant. The strange results are happening because of the collinearity. 
+
+It may seem like these examples are extreme, but they actually do happen sometimes in practice.  In our example, `living`, `land`, `beds`, etc. could be highly correlated, so we'll want to pay attention to these possible issues. 
+
+## Pairs plot
+One way to investigate possible collinearity is to make a scatter plot of every pair of predictors.  There an easy way to do this with the `ggpairs` function. 
+
+```{r}
+d$logland = log(d$land+1) ## use log of land
+ggpairs(d[,c('living', 'logland', 'beds', 'baths')])
+cor(d[,c('living', 'logland', 'beds', 'baths')], 
+    use='pairwise.complete.obs')
+```
+
+The output gives all of the scatter plots between each pair of predictors in the lower left, all of the correlations in the upper right, and a smoothed histogram along the diagonal.  Note that `living` is correlated with both `beds` and `baths`, which we expected since both `beds` and `baths` probably aren't high unless living area is high. We also see that `beds` and `baths` are somewhat correlated. But these correlations are *that* high, and we have a lot of data, so hopefully it's not a problem. 
+
+Let's add `beds` to our previous model.  
+
+```{r}
+m3 = lm(value ~ living + land + beds, data=d)
+summary(m3)
+
+```
+
+The coefficient for `beds` is negative (expected change in `value` for one additional bed is -1153) which isn't very intuitive. This is likely because `living` and `beds` are very similar, so including `beds` in the model is not giving the model significantly more information about value. The coefficient of `land` almost doubled, and large changes in coefficients when additional predictors are added is a sign of possible collinearity. 
+
+The adjusted R^2 went up a *little* bit, but we might not want to include `beds` because 
+
+- the coefficient of `beds` was negative, making the model is harder to interpret.
+- the increase in adjusted $R^2$ wasn't *that* substantial
+- it is a simpler model (meaning fewer predictors) without `beds` , and we might prefer a simple model over a complex model if the improvement of the complex model isn't that substantial. 
+
+Let's remove `beds` and try including `baths` as an additional predictor. 
+```{r}
+m4 = lm(value ~ living + land + baths, data=d)
+summary(m4)
+
+```
+
+The adjusted $R^2$ for `m4` is a little higher than `m2`, and this time the coefficient for `baths` has a positive sign. The coefficents for `living` and `land` changed a little, but not as much as they did when including `beds`. So we probably want to include `baths` because 
+
+- the coefficient of `baths` is positive and significant 
+- the adjusted $R^2$ increased 
+
+Sometimes these decisions aren't super obvious. There are often gray areas which require a judgement call, or require other considerations outsider of looking a regression outputs like adjusted R^2, p-values, etc. For example, you may make different decisions depending on the particular client or audience that you are building the model for. 
+

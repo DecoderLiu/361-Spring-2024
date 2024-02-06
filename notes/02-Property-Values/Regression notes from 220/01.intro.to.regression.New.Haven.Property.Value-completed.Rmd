@@ -1,0 +1,72 @@
+---
+title: "Introduction to Regression Analysis"
+author: "S&DS 220"
+date: "Week 10, Day 1"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, 
+                      warning=FALSE, 
+                      message=FALSE, 
+                      comment=NA, 
+                      fig.align='center', 
+                      fig.width=5,
+                      fig.height=5)
+library(tidyverse)
+library(plotly)
+```
+
+## Introduction to regression analysis
+The purpose of regression analysis is to investigate the relationship between 2 or more variables that are related in a non-deterministic fashion.  If $x$ and $y$ have a deterministic relationship, it means that $y$ can be uniquely determined based on a given value of $x$. In a non-deterministic relationship, $y$ can *not* be uniquely determined by $x$, because there are other factors that effect $y$. 
+
+An example of a non-deterministic relationship is high school GPA and college GPA. We might expect that students with a high GPA in high school would tend to have a higher GPA in college than those students with a low GPA in high school.  We would expect these two variables to be related in some way, but we would not expect the relationship to be deterministic since high school GPA does not uniquely determine college GPA. Here is an example of some GPA data. 
+
+```{r}
+d = read.csv('FirstYearGPA.csv')
+head(d)
+```
+
+It's tough to tell the relationship between HSGPA and (first year college) GPA by looking at the table of numbers, so let's make a scatter plot of GPA vs HSGPA. 
+
+```{r}
+g = ggplot(d, aes(x=HSGPA, y=GPA)) + 
+  geom_point()
+g
+```
+
+There seems to be some sort of relationship between HSGPA and GPA, but the relationship is far from deterministic. We might expect that variables like college major, the student's work ethic, factors that are difficult or impossible to account for, and randomness, could all have an impact on a student's college GPA. 
+
+Another example, which will be using throughout this document, is the relationship between characteristics of a single family home property and its assessed value.  We would expect that properties with more square footage of living area (or land area, or number of bedrooms, etc) tend to have a higher assessed value, so we would expect that some relationship exists between these two variables.  But the relationship is non-deterministic, since we can't uniquely determine the value knowing the living area.  Several other factors impact a property's value. 
+
+Let's look at the New Haven Property data that we will be using.  Let's limit ourselves to only the properties with an assessed value at $500k or less, living area of 5000 acres or less, and land area of 10 acres or less. 
+
+```{r}
+d = read.csv('NewHavenHousing.csv')
+
+## remove houses over $500k, 5000 sq ft, and 10 acres
+d = d[d$living<=5000 & d$value<=500000 & d$land<=10,]   
+d = d %>% filter(living<=5000, value<=500000, land<=10) ## another way to do the same thing
+
+g = ggplot(data=d, aes(x=living, y=value))+
+  geom_point()
+g
+```
+If we want to inspect some of the outliers, we can create and interactive plot.
+```{r}
+g = ggplot(data=d, aes(x=living, y=value, label=address))+
+  geom_point()
+gg = ggplotly(g)
+gg
+```
+
+Our goal is to learn how to study these kinds of non-deterministic relationships in a systemic way. Regression analysis helps us answer the following questions: 
+
+1. What is our best estimate of the relationship between our independent variables and dependent variable? 
+2. How sure are we about our best estimate of the relationship?
+3. What is our best estimate of what dependent variable is, given particular values of our independent variables?
+4. How sure are we of our best estimate of our dependent variable?
+5. etc.
+ 
+We'll start with the simple case: one independent variable $x$, one dependent variable $y$, and how to study the linear relationship between these two variables. 
+

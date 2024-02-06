@@ -1,0 +1,121 @@
+---
+title: "Assessing the model"
+author: "Brian Macdonald"
+date: "November 11, 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, 
+                      warning=FALSE, 
+                      message=FALSE,
+                      comment=NA, 
+                      fig.align='center', 
+                      fig.width=5, 
+                      fig.height=5)
+library(tidyverse)
+```
+
+```{r}
+d = read.csv('NewHavenHousing.csv')
+
+## remove houses over $500k, 5000 sq ft, and 10 acres
+d = d[d$living<=5000 & d$value<=500000 & d$land<=10,]   
+d = d %>% filter(living<=5000, value<=500000, land<=10) ## another way to do the same thing
+m1 = lm(value ~ living, data=d)
+d$yhat = predict(m1, newdata=d)
+```
+
+
+## Total sum of squares
+One way to determine how well a line fits the data is to start by computing a measure of the total variation in $y$:
+
+$$ SST = \sum_{j=1}^n (y_j - \bar{y})^2. $$
+This can be interpreted as the total variation in the $y_j$'s from their mean $\bar{y}$.  This total variation be broken into to components, the variation that is explained by the regression model, and the variation that is left unexplained by the regression model. 
+
+For our model, we have 
+
+```{r}
+## SST
+SST = sum((d$value - mean(d$value))^2)
+SST
+```
+## Regression sum of squares
+The regression sum of squares is given by 
+
+$$ SSR = \sum_{j=1}^n (\hat{y_j} - \bar{y})^2. $$
+
+This is a measure of the distance between $\bar{y}$ and the regression line, and can be interpreted as how much of the total variation in $y$ is explained by the regression model.
+
+For our model, we have 
+
+```{r}
+SSR = sum((d$yhat - mean(d$value))^2)
+SSR
+```
+
+## Error sum of squares
+
+The sum of the square of the errors: 
+
+$$SSE = \sum_{j=1}^n (e_j)^2 = \sum_{j=1}^n (y_j - \hat{y_j})^2.$$
+This is a measure of the distance between the points and the regression line.  This can be interpreted as how much variation in $y$ is left unexplained by the model, or how much can not be attributed to a linear relationship. 
+
+For our model we have
+
+```{r}
+SSE = sum((d$value - d$yhat)^2)
+SSE
+```
+
+This is the same quantity that we discussed when talking about how to find the best fit coefficients.  The best fit coefficients are the ones that minimize the SSE.
+
+## Relationship between SST, SSR, and SSE
+
+Note that SSR + SSE = SST.  We won't show the proof of this, but we can verify that it's true for our model:
+
+```{r}
+SSR+SSE
+SST
+```
+
+
+## Coefficient of Determination, $R^2$
+The coefficent of determination $R^2$ is given by $\frac{SSR}{SST}$.  Using the fact that SSR = SST - SSE, this can also be written as 
+$$ R^2 = \frac{SSR}{SST}  = \frac{SST-SSE}{SST} = 1 - \frac{SSE}{SST}$$
+Recall that SSR is the variation in $y$ explained by the model, and SST is the total variation in $y$.  This means that $R^2$ can be interpreted as the proportion of the total variation in $y$ that is explained by the model.  Said another way, SSR is the part of SST that is explained by the model, and SSE is part that is left unexplained by the model. 
+
+For our model we have
+
+```{r}
+R2 = SSR/SST
+R2
+```
+In our case, SSR makes up 67% of the SST, and SSE makes up 33%. This means that 67% of the variation in value can be explained by the living area.  The remaining 33% can not be explained by living area, but is due to other factors not accounted for in the model as well as randomness. 
+
+Since $R^2$ is a quantity that is typically of interest when assessing a simple linear regression model, it is automatically computed by `lm` when we fit our model, and we can access the value like this:
+
+```{r}
+summary(m1)$r.squared
+```
+which matches the value that we got above "by hand". 
+
+## The `summary` function
+Note that we used the `summary` function above to get $R^2$.  If we don't add the `$r.squared` to the end of that, and simple put `summary(m1)`, we get a lot more details about our model
+
+```{r}
+summary(m1)
+```
+Note that the coefficients that we got before using `m1$coefficients` are there, the $R^2$ is there (called "Multiple R-squared"), and several other pieces of information, which we will discuss later. 
+
+## Relationship between $R^2$ and correlation
+Finally, note that the square root of $R^2$ is $R$, our correlation coefficient. 
+
+```{r}
+r2 = summary(m1)$r.squared
+r = cor(d$value, d$living)
+r2
+r
+sqrt(r2)
+```
+
