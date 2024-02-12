@@ -10,7 +10,7 @@ library(tidyverse)
 library(pubtheme)
 library(leaflet)
 library(htmltools)
-
+library(sp)
 ```
 
 ## Part 1: Property values
