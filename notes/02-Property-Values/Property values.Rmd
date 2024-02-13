@@ -1,0 +1,57 @@
+---
+title: "Property Values"
+author: "S&DS 361"
+date: "2024-02-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+d = read.csv('data/branford.csv')
+head(d,2)
+```
+There is one row per property, each with one single family home, and the columns have the following meanings:
+
+- `value`: the assessed value of the property
+- `year`: the year the house was built
+- `land`: the square feet of the land area of the property
+- `living`: the square feet of the living area of the property
+- `beds`: the number of bedrooms
+- `address`: the address of the property
+- `buildings`: the number of buildings on the property (all 1 in this data set)
+- `good`: the condition of the property (10-100)
+- `style`: the style of the house (Colonial, Ranch, etc.)
+- `model`: all "Residential" in this data set
+- `grade`: the grade of the property (A+, A, etc)
+- `baths`: the number of full bathrooms
+- `halfbaths`: the number of half bathrooms
+- `heatfuel`: the type of heating fuel (Oil, Gas, etc.)
+- `heattype`: the type of heating (Hot Water, Forced Air-Duc, etc.)
+- `ac`: the type of air conditioning (Central, None, etc.)
+- `nghd`: a numeric code for the neighborhood of the property
+- `stories`: the number of stories in the house
+- `saleprice`: the most recent sale price of the property
+- `saledate`: the date of the most recent sale
+- `roof`: the type of roof (usually Asphalt)
+- `bathstyle`: the style of the bathroom (Average or Modern)
+- `kitchen_style`: the style of the kitchen (Above Avg, Average or Below Avg)
+- `long`: the longitude of the property
+- `lat`: the latitude of the property
+- `miles_to_coastline`: the distance to the coastline in miles
+- `miles_to_highway`: the distance to I-95 in miles
+- `miles_to_school`: the distance to the nearest school in miles
+- `miles_to_hospital`: the distance to the nearest hospital in miles
+
+Properties with more than one building, and properties with something other than a single family home have been removed. 
+
+## Data exploration
+
+In-class exercise. See Ed Discussions
+
+```{r}
+
+```
+
