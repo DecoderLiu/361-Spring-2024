@@ -1,0 +1,151 @@
+---
+title: "Checking model assumptions"
+author: "S&DS 220"
+date: "Week 11, Day 1"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, 
+                      warning=FALSE, 
+                      message=FALSE,
+                      comment=NA, 
+                      fig.align='center', 
+                      fig.width=5, 
+                      fig.height=5)
+library(tidyverse)
+library(plotly)
+```
+
+```{r}
+d = read.csv('NewHavenHousing.csv')
+d = d[d$living<=5000 & d$value<=500000 & d$land<=10,]   
+d = d %>% filter(living<=5000, value<=500000, land<=10) 
+m1 = lm(value ~ living, data=d)
+d$yhat = predict(m1, newdata=d)
+```
+
+## Intro
+
+Let's recall some of the assumptions of our simple linear regression model 
+
+1. The error $\epsilon$ is 
+    a. normally distributed
+    b. with mean 0, and variance $\sigma^2$. In particular, it has constant variance that does not depend on $x$. 
+2. There is a linear relationship between $x$ and $y$
+
+There are several plots that can help us assess whether these assumptions are true.  
+
+## Are the residuals normally distributed? 
+One way to check this is to make a histogram of the residuals. For these graphs we will standardize the residuals by subtracting the mean and dividing by the standard deviation. Since the mean of the residuals is 0, we only need to divide by the standard deviation.  If the residuals are indeed normal, the standardized residuals should be standard normal, and the histogram should look like a bell-shaped curve centered at 0, with about 95% of the points between -2 and 2, and over 99% of the points between -3 and 3. 
+
+```{r}
+d$res = d$value - d$yhat
+#mean(d$res)
+d$z.res = (d$res - 0)/sd(d$res)
+x = seq(-5,5, by=.01)
+df = data.frame(x=x, y=dnorm(x, 0, 1))
+#head(df)
+ggplot(d, aes(x=z.res, y=..density..))+
+  geom_histogram(fill='gray', color='black')+
+  geom_line(data=df, aes(x=x,y=y), color='blue')
+
+```
+
+This looks moderately bell-shaped, but there are characteristics that make it look like the residuals are not normally distributed: 
+
+- there seems to be a higher and skinnier than expected in the middle
+- there are a few fairly large (much bigger than +4) residuals which wouldn't be expected if the residuals were actually normally distributed
+- the histogram also looks a little asymetric, and not centered at 0. (The mean is 0, but the median isn't).
+
+```{r}
+median(d$res) ## nonzero because it is somewhat skewed
+```
+
+This histogram is the first hint that maybe our model isn't quite the best model since some of the assumptions don't seem to be satisfied.  But it's not terrible, and we could just go with it if we had to. 
+
+## Normal probability plot
+A normal probability plot is another way to check for normality.  In this case, if the dots follow the straight line closely, the residuals are close to normal. It should look like this: 
+
+```{r}
+set.seed(123)
+x = data.frame(x=rnorm(10000, mean=0, sd=1))
+ggplot(data=x, aes(sample=x)) + 
+  geom_qq()+
+  geom_qq_line()
+```
+
+The dots follow the line very closely.  They move away from the line a little bit near the upper and lower tail, but it's still pretty close to the line.  Let's look at the normal probability plot for our residuals.
+
+```{r}
+ggplot(data=d, aes(sample=z.res))+
+  geom_qq()+
+  geom_qq_line()
+
+```
+
+The points follow the line fairly closely in the middle, but are very far from the line at the right tail, suggesting that the errors are probably not normal.  We don't necessarily expect the residuals to look perfectly normal, but these points deviate a lot from the line, and this gives us a warning that there may be potential issues that we might want to be concerned about. 
+
+## Errors have constant variance
+We have found clues that assumption 1(a) is not true.  Let's now check 1(b).  If the residuals do indeed have a constant variance that does not depend on $x$, then when if we plot the residuals versus $x$ we should not see any discernible pattern.
+
+```{r}
+ggplot(data=d, aes(x=living, y=z.res))+
+  geom_point()
+```
+
+Unfortunately it seems like as $x$ gets bigger, there seems to be a larger spread in the residuals.  This is evidence that are assumption about constant variance is not true. 
+
+## Remedies
+Fortunately there are some ways we can try to modify our model to deal with these issues.  In fact, a small change or two in our model can often remedy many or all of the issues at once, since many of the issues are interrelated. We'll explore two of these options next, including
+
+- transforming variables
+- including additional predictors
+
+It can also help to build different models for different subsets of the data, but we won't try that here.
+```{r}
+g = ggplot(data=d, aes(x=living, y=value, text=address))+
+  geom_point()
+ggplotly(g)
+```
+
+
+## Transform variables
+
+```{r}
+d$log.value = log(d$value)
+ggplot(data=d, aes(x=living, y=log.value))+
+  geom_point()
+```
+
+Let's build a model with `log.value` as the outcome, and then plot a histogram for the residuals. 
+```{r}
+## Build new model and find standardized residuals
+m1.log = lm(log.value ~ living, data=d)
+d$yhat.log = predict(m1.log, newdata=d)
+d$res.log = d$log.value - d$yhat.log
+d$z.res.log = (d$res.log - 0)/sd(d$res.log)
+#head(d)
+
+## Now plot
+ggplot(d, aes(x=z.res.log, y=..density..))+
+  geom_histogram(fill='gray', color='black')+
+  geom_line(data=df, aes(x=x, y=y))
+```
+This isn't perfect, but it looks a lot better. Let's plot the normal probability plot.
+
+```{r}
+ggplot(data=d, aes(sample=z.res.log))+
+  geom_qq()+
+  geom_qq_line()
+```
+Still not perfect, but it does look better. And finally, the residuals vs x.
+
+```{r}
+ggplot(data=d, aes(x=living, y=z.res.log))+
+  geom_point()
+```
+
+The variance still varies with x, but it isn't as bad as before. 
+
+Additional predictors should help with all of these as well. That's coming up next. 

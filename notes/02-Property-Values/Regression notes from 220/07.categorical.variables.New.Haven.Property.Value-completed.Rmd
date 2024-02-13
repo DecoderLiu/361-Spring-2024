@@ -1,0 +1,262 @@
+---
+title: "Categorical variables"
+author: "S&DS 220"
+date: "Week 11, Day 2"
+output:
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment=NA)
+library(tidyverse)
+```
+
+```{r}
+d = read.csv('NewHavenHousing.csv')
+
+## remove houses over $500k, 5000 sq ft, and 10 acres
+d = d[d$living<=5000 & d$value<=500000 & d$land<=10,]   
+d = d %>% filter(living<=5000, value<=500000, land<=10) ## another way to do the same thing
+
+```
+
+Very often when analyzing data we come across categorical variables that provide information that might help us improve our model.  In the housing data we have been working with, `style`, `grade`, and `ac` are examples of  categorical variables that might help improve our model. For example, we would expect a house with `grade` of "Excellent" to typically have a higher value than a house with `grade` of "Average". We may want to use that information in a model, along with the information contained in other categorical variables. 
+
+Unfortunately, the algorithm we use to find the best fit coefficients for our regression model requires numeric predictors.  So what do we do?  Let's start with the simplest case of a categorical variable with two possible values.  
+
+## Categorical variable with two possible values
+The `ac` column in our data set, indicates whether or not a house has central air conditioning. There are two possible values, "yes" and "no". 
+
+```{r}
+table(d$ac)
+```
+
+In a situation like this when there are two possible values, we convert this to a numeric predictor where one of those values is coded as 0, and one of them is coded as 1.  For example, here we can let "no" be 0, and "yes" be 1.  This kind of variable is called an **indicator variable**.  You can think of it like it is *indicating* whether or not this house has AC (1) or does not have AC (0). 
+
+Once it is a numeric variable we can include it in the model and find the best fit coefficients. If we include this indicator variable in our simple linear regression model $y = \beta_0 + \beta_1 x_1 + \epsilon$, our model would be 
+
+$$ y = \beta_0 + \beta_1 x_1 + \beta_2 x_2 + \epsilon, $$
+
+where $x_2$ is either 0 or 1. The interpretation of the coefficient $\beta_2$ that we find for our indicator variable is similar to before, but with one modification. We can still think of it as the expected change in $y$ for a unit increase in $x_2$, holding all other variables constant.  "Unit increase" in this case means the variable is changing from 0 to 1, or in other words changing from "doesn't have AC" to "has AC".  So we are estimating the expected value of $y$ if the house has AC relative to if the house does not have AC.
+
+Fortunately we don't have to do this coding manually.  It is automatically done by R when we use the `lm` function with a categorical variable.  Let's take a look at what the `summary` output looks like when we add `ac` to our model.  
+
+```{r}
+m1 = lm(value ~ living     , data=d)
+m2 = lm(value ~ living + ac, data=d)
+summary(m2)
+```
+
+The intercept and the coefficient for `living` are still there, and now there's a row for `acyes`. This means that this coefficient is coming from the `ac` column, and the coefficient corresponds to the value `yes`. In other words, this is the difference in `value` we expect when the house has AC instead of not having AC.
+
+Did this help our model?  Let's check adjusted $R^2$. 
+
+```{r}
+summary(m1)$adj.r.squared
+summary(m2)$adj.r.squared
+```
+ 
+We have a higher adjusted $R^2$, and from the full summary we see that both the original predictor `living` and our new predictor `ac` have coefficients that are significant.  So it seems like we improved our model.  
+
+## Different choices for coding
+What happens if we want to assign "yes" to 0 and "no" to 1 for some reason, instead of "no" to 0 and "yes" to 1?  Note that if our categorical variable is stored as a character vector in R, then R will automatically come up with the assignment based on alphabetical order. The first category alphabetically will be 0, the next will be 1. To force R to do another order, we have to convert the `ac` to a "factor", and specify the order of the levels of that factor.  In this case, we'll choose the order "yes", "no", instead of "no", "yes".  Then R will automatically assign "yes" to 0 and "no" to 1. 
+
+```{r}
+d$ac = factor(d$ac, levels=c('yes', 'no'))
+```
+
+Now let's build the model again. 
+```{r}
+m3 = lm(value ~ living + ac, data=d)
+summary(m3)
+```
+
+The name of the coefficient is now `acno` meaning that this corresponds to the `ac` column and the value `no`.  The coefficient is interpreted as the expected change in $y$ if the `ac` is "no" instead of "yes".  
+
+Notice that the coefficient of `living` is the same in both models. Also notice that the coefficient for `acno` (-2.368e+04) is the same as the coefficient for `acyes` (2.368e+04) in the previous model `m2`, except it now has a minus sign.  This is intuitive, since 
+
+- the expected change in $y$ if `ac` is "no" instead of "yes", and
+- the expected change in $y$ if `ac` is "yes" instead of a "no"
+
+should be equal and opposite.  The only thing we have changed here is our reference point. It was "no" in `m2` and it is "yes" in `m3`. 
+
+Finally, notice that the intercept in this model has changed, and has changed exactly by the magnitude of the `ac` coefficient:
+
+```{r}
+c(m2$coefficients[1],  m3$coefficients[1])
+  m3$coefficients[1] - m2$coefficients[1]
+```
+
+We point out all of these observations to help make the final point that the predictions that these two models give are the same whether we choose "no" as 0 and "yes" as 1, or "yes" as 1 and "no" as 0.  Here are the two models. 
+
+$$ 
+\begin{align}
+m2: \hat{y} =        -10599.80 + 86.53x_1 & + 23679.74 x_2 \\
+m3: \hat{y} =\,\,\,\, 13079.95  + 86.53x_1 & - 23679.74 x_2
+\end{align}
+$$
+When `ac` is `yes`, we have
+$$ 
+\begin{align}
+m2: \hat{y} =        -10599.80 + 86.53x_1 & + 23679.74 \cdot \textbf{1} \\
+m3: \hat{y} =\,\,\,\, 13079.95  + 86.53x_1 & - 23679.74 \cdot \textbf{0} 
+\end{align}
+$$
+
+which simplify to
+$$ 
+\begin{align}
+m2: \hat{y} = 13079.95 + 86.53x_1  \\
+m3: \hat{y} = 13079.95 + 86.53x_1  
+\end{align}
+$$
+
+And when `ac` is `"no"`, we have
+$$ 
+\begin{align}
+m2: \hat{y} =        -10599.80 + 86.53x_1 & + 23679.74 \cdot \textbf{0} \\
+m3: \hat{y} =\,\,\,\, 13079.95  + 86.53x_1 & - 23679.74 \cdot \textbf{1} 
+\end{align}
+$$
+
+which simplify to
+$$ 
+\begin{align}
+m2: \hat{y} =  - 10599.80 + 86.53x_1  \\
+m3: \hat{y} =  - 10599.80 + 86.53x_1 
+\end{align}
+$$
+
+The two linear models give the same predictions for any value of $x_1$, regardless of whether we choose "no" as 0 and "yes" as 1, or if we set "no" as 1 and "yes" as 0. 
+
+## Which coding to choose? 
+The only reason we might want to choose one of these models over the other is for ease of interpretation.  The coefficient we get for an indicator variable is interpreted as the expected change in $y$ when the categorical predictor is 1 relative to when it is 0. So the value of our categorical predictor that we set to 0 is the one that we want to measure everything relative to. We should choose this to be the one that facilitates the easiest or most relevant interpretation. This choice is highly dependent on the application, how it is easiest to communicate the results, and what the results will be used for.  
+
+In a medical application, where $x$ is a categorical variable with possible values "treatment" and "no treatment", researchers will often choose "treatment" as 1 and "no treatment" as 0. Then the coefficient is an estimate of the expected change in $y$ when the patient receives a treatment relative to when the patient does not receive a treatment.  This interpretation might be easier to communicate than the alternative.  
+
+Sometimes we choose he one that we expect to have the smallest coefficient. That way all of the relative comparisons are positive.  In the case with our housing data, we would probably choose "no" as our base and set that to 0.  This might be easiest to interpret since "no" has lower values than "yes", so all of the relative comparisons that we need to make will be positive.  It might be easier to say "we expect $y$ to be 0.33 more for a 'yes' relative to a 'no'" than it is to say "we expect $y$ to change by -0.33 for a 'no' relative to a 'yes'". It might also seem more intuitive because with bernoulli/binomial random variables, we chose 1 to be success/yes/true/etc, and 0 to be failure/no/false/etc. 
+
+Other times, we may want to make the base case whichever category is considered "normal" or "average" or the "status quo".  For example, if we had a variable that is "more", "average", and "less", then we may want to choose "average" to be our base case and measure everything relative to that.  In the housing data, the reference for the `grade` variable could be chosen as "Average". 
+
+There is no rule that will apply to every circumstance.  Even for a particular case, it may come down to preference.  
+
+## Categorical variable, more than two possible values
+Let's consider now the case when we have a categorical variable with more than 2 possible values.  Let's first focus on the `style` column. The most common styles in the data are Colonial, Cape Cod, and Ranch. There are several other styles, but they have fewer observations. Let's simplify this column be changing all of those other styles to "Other". 
+
+```{r}
+d = d %>% 
+  mutate(style = ifelse(style %in% c('Colonial', 'Cape Cod', 'Ranch'), 
+                        style, 
+                        'Other'))
+table(d$style)
+```
+
+Now our column `style` has 4 possible values (Colonial, Cape Cod, Ranch, and Other). When there are 4 possible values, we will have 4-1=3 indicator variables $x_2, x_3,$ and $x_4$, and they will coded in the following way by default.
+
+Style   | $x_2$ | $x_3$ | $x_4$
+:-------|:------|:------|:-----
+Cape Cod|   0   |   0   |   0
+Colonial|   1   |   0   |   0
+Other   |   0   |   1   |   0
+Ranch   |   0   |   0   |   1
+
+In this example Cape Cod is the "base case" or "reference", and it is coded as all zeros. For Colonial, Other, Ranch, each of them is 1 for one of the indicator variables, and 0 for the others.  If we add `style` to our simple linear regression model $y = \beta_0 + \beta_1 x_1 + \epsilon$, the model would look like this: 
+
+$$  y = \beta_0 + \beta_1 x_1 + \beta_2 x_2 + \beta_3 x_3 + \beta_4 x_4 + \epsilon$$
+
+where $x_2, x_3,$ and $x_4$ are either 0 or 1, depending on the value of `style`. The coefficients have the following interpretations, which are all relative to the "base case" Cape Cod: 
+
+- $\beta_2$ is the expected change in $y$ when the house is a Colonial instead of a Cape Cod,
+- $\beta_3$ is the expected change in $y$ when the house is a Other instead of a Cape Cod,
+- $\beta_4$ is the expected change in $y$ when the house is a Ranch instead of a Cape Cod.
+
+Fortunately, we don't have to do this coding by hand, as R does it for us.  Let's take a look.
+
+```{r}
+m4 = lm(value ~ living + style, data=d)
+summary(m4)
+```
+
+Since we didn't specify an order for the categorical variable, R automatically uses the first one alphabetically (Cape Cod) as the base case, and uses the others (Colonial, Other, Ranch) in order. We see three coefficients, `styleColonial`, `styleOther`, and `styleRanch`, respectively.  
+
+The -9.816e+03 for `styleColonial` is the difference in $y$ that we expect when the house is a Colonial instead of Cape Cod, assuming all other variables (`living`) are constant.  The coefficients for `styleOther` and `styleRanch` have similar interpretations.  Notice that all of the style coefficients are significant.  This means that a house being a Colonial, Other, or Ranch is significantly different from 0, which means different from being a Cape Cod.  
+
+We might prefer to override the default R behavior and choose "Other" as the base case. Let's try that. 
+
+```{r}
+d$style = factor(d$style, levels=c('Other', 'Colonial', 'Cape Cod', 'Ranch'))
+m5 = lm(value ~ living + style, data=d)
+summary(m5)
+```
+
+Let's compare the coefficients of the two models.  
+```{r}
+round(m4$coefficients,3)
+round(m5$coefficients,3)
+```
+
+We note the same three observations from before about the similarities among the coefficients from the two models:
+
+1. The coefficient for `living` is the same in both models
+2. The coefficients of $x_3$ are the same in magnitude and opposite in sign. 
+3. The intercepts and other indicator variables all differ by magnitude of the $x_3$ coefficient, 11245.784. 
+
+This means that are predictions for the two models will once again be exactly the same.  The choice of which variable is the base case does not affect the predictions, only the interpretation of the model.  We should make our choice based on what will lead to the most clear or most useful interpretation.
+
+To verify that the predictions will be the same, let's try both models in the case when the house is a Colonial. Our two models are
+
+$$ 
+\begin{align}
+m4: \hat{y} = -15840.534 + 94.911 x_1 & -  9816.229 x_2 + 11245.784 x_3 + 13149.90 x_4, \\
+m5: \hat{y} =  -4594.750 + 94.911 x_1 & - 21062.01 x_2 - 11245.784 x_3 +  1904.113  x_4.
+\end{align}
+$$
+When `style` is `Colonial`, we have
+$$ 
+\begin{align}
+m4: \hat{y} = -15840.534 + 94.911 x_1 & -  9816.229 \cdot 1 + 11245.784 \cdot 0 + 13149.90 \cdot 0, \\
+m5: \hat{y} =  -4594.750 + 94.911 x_1 & - 21062.01 \cdot 1 - 11245.784 \cdot 0 + 1904.113  \cdot 0.
+\end{align}
+$$
+
+and these simplify to 
+$$ 
+\begin{align}
+m4: \hat{y} =  -25656.76 + 94.911 x_1  \\
+m5: \hat{y} =  -25656.76 + 94.911 x_1 
+\end{align}
+$$
+
+This means that the predictions $\hat{y}$ will be the same for every possible value of $x_1$. Also notice that adjusted $R^2$, and many other parts of the `summary` output are identical. 
+
+```{r}
+summary(m4)$adj.r.squared
+summary(m5)$adj.r.squared
+```
+
+
+Recall in `m4` we concluded that a house being a Colonial, Other, or Ranch, was significantly different from being a Cape Cod, since all the coefficients were significant in that model.  It is not surprising to see in `m5` that the coefficient for "Cape Cod" is significant now that "Other" is the reference, since "Other" was significant before. In other words, "Other" is significant when "Cape Cod" is the reference, and "Cape Cod" is significant when "Other" is the reference. Note that in `m5` the coefficient for Ranch is not significant now that the reference is "Other". The coefficient for "Ranch" is now the expected change in `value` for if the house is a "Ranch" as opposed to "Other", and the p-value suggests that this change is not significantly different from 0. 
+
+## Numbers as categorical variables
+A categorical variable doesn't necessarily mean it has to be a character/text variable. It could also be a variable where the possible values are groups that are numbered 1 through 4, but where the order of the numbers has no particular meaning: the numbers are simply labels, and could be changed to letters A through D with no change in meaning.  If 1 through 4 are simply labels, then subtracting 2 minus 1 really has no meaning, since we are using 2 and 1 as labels, not as numbers, and we don't expect the difference between 1 and 2 to be related in any way to the difference between 2 and 3, or the difference between 3 and 4.  In this case, a variable like this could be converted as a categorical variable and treated the same way as the position variable above.  We would have to use `d$columnname = as.character(d$columnname)` to manually change this column to a character variable. Otherwise `lm` will treat it as numeric. 
+
+Even if the numbers do have a meaning, we may still prefer to treat the variable as categorical in some cases, like when we don't expect the difference between 1 and 2 to be the same as the difference between 2 and 3. In the housing data we have numeric variables `beds` and `baths`. We might think, for example, that an increase from 1 to 2 beds would have more influence on a house's value than a increase from 7 to 8 beds. In other words, we might think that the relationship between number of beds and value is not linear. In a case like this, we might try converting `beds` to a categorical variable before including it in a model. 
+
+Below we find average `value` by number of beds and plot it. It looks like an S-shaped curve, suggesting that there may not be a linear relationship between value and beds and that a categorical variable for beds may be more appropriate. 
+```{r}
+## 0,7,8,9 have few observations, so let's remove them
+## and find average value by beds
+dg = d %>% 
+  filter(beds %in% 1:6) %>% 
+  group_by(beds) %>%
+  summarise(value = mean(value), 
+            n=n())
+
+ggplot(dg, aes(x=beds, y=value, size=n))+
+  geom_point()+
+  scale_x_continuous(breaks=1:6, limits=c(1,6))+
+  theme_bw()
+  
+```
+

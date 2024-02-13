@@ -17,7 +17,9 @@ knitr::opts_chunk$set(echo = TRUE)
 - Course Meeting: Tue/Thu, 9:00-10:15am, Location TBD
 - Office hours: Monday 1:30-2:30 on [Zoom](https://yale.zoom.us/j/91504731543?pwd=Q2oycVk4NG1NbHgyMExvNkUzWUFaUT09) and Thu 10:30-11:30, in my office.
 - Teaching Fellows, ULAs, and course manager, and office hours: see Canvas
-- Midterms: Tue Feb 20, 9am-10:15am, and Tue Apr 2, 9am-10:15am, both in our classroom
+- Midterms, both during our class time and in our classroom: 
+    - Tue Feb 20, 9am-10:15am
+    - Tue Apr 2, 9am-10:15am
 - Final exam: Wed May 8, 9am-12pm, Room TBD
 - Schedule: See shared spreadsheet
 
@@ -90,6 +92,12 @@ Will not be dropped:
 
 Will be dropped: 
 - If you made a reasonable attempt at every problem but had trouble with a couple of them, and ended up getting a 82%, and that is your lowest grade on a problem set, that grade will be dropped. 
+
+**Exam format.** Exams will have two parts. Part 1 will be pencil and paper only. There will be some conceptual questions, questions where I give output (e.g. `summary(lm1)` output, a data visualization) that you have to analyze, questions where I give you code that you have to comment, and questions where you have to write code. 
+
+Part 2 will be open notes, open computer, open internet. You can not communicate with another human, but you can communication with an AI chatbot (e.g. ChatGPT, Claude, Bard/Gemini, Grok, etc). You will have to write code to answer questions.  Often you have perform some sort of data exploration and visualization, fit a model, and display and analyze the results.
+
+Practice problems will be given a week before the exam.  
 
 **Curving Final Course Grades.** I do not plan on curving final course grades. I may lower some cutoff lines based on where there is a gap in grades. For example, in the situation below I would lower the cutoff for an A from 93 (black line) to 92.5 (red line) because a few students are clustered around 93 and there is a gap in the grades around 92.5. 
 

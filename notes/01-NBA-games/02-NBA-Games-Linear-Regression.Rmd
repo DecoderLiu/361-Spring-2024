@@ -1,0 +1,215 @@
+---
+title: "Predicting NBA Game Outcomes"
+author: "S&DS 361"
+date: "2024-02-06"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(pubtheme)
+library(gganimate)
+
+```
+
+
+## Review Simple Linear Regression
+The simple linear regression model can be written 
+
+$$ Y = \beta_0 + \beta_1 x + \epsilon, \quad \epsilon \sim N(0, \sigma^2) $$
+
+We can think of this as a deterministic relationship that is linear ($\beta_0 + \beta_1 x$), plus some non-deterministic/randomness component $\epsilon$. 
+
+We use a capital $Y$ for the outcome to indicate that $Y$ is a random variable, which it is since it equals a constant plus a random variable ($\epsilon$). 
+
+To understand this further, let's use $x^*$ to denote a particular value of $x$. For a given $x^*$, we have
+
+1. $E(Y|x^*) = E(\beta_0 + \beta_1 x^* + \epsilon) = \beta_0 + \beta_1 x^* + E(\epsilon) = \beta_0 + \beta_1 x^*$
+2. $V(Y|x^*) = V(\beta_0 + \beta_1 x^* + \epsilon) = V(\epsilon) = \sigma^2$
+3. $Y$ is normally distributed (since it is constant + $\epsilon$ and $\epsilon$ is normal)
+
+So for any given $x^*$, we have that $Y \sim N(\beta_0 + \beta_1 x^*, \sigma^2)$. 
+
+
+## Review linear regression assumptions
+
+- Linearity: The relationship between the predictors and the outcome is linear.
+- Independence: The error are independent.
+- Normality: The outcome is normally distributed at each x.
+- Constant variance: The variance of the outcome is equal for all x.
+
+
+
+## NBA games data
+```{r}
+d = readRDS('data/games.rds')
+
+## Basketball
+nba = d %>% 
+  filter(lg == 'nba', 
+         season %in% 1990:2023, 
+         season.type == 'reg') %>%
+  select(date, away, home, 
+         ascore, hscore, season, gid)
+head(d)
+
+da = nba %>% select(date, away, ascore, home, hscore, season, gid) %>% mutate(ha = 'away')
+dh = nba %>% select(date, home, hscore, away, ascore, season, gid) %>% mutate(ha = 'home')
+colnames(da) = c('date', 'team', 'score',  'opp', 'opp.score', 'season', 'gid', 'ha')
+colnames(dh) = c('date', 'team', 'score',  'opp', 'opp.score', 'season', 'gid', 'ha')
+db = bind_rows(da, dh) %>% 
+  arrange(date, gid)
+head(db)
+```
+First let's create a column that represents how good the team was in the previous season. We'll start by finding the average score and score allowed for each team in each season. 
+
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+We want to add columns for the previous season's average score for the `team` in each row. We can do this by adding a `prev.season` column to `db` and joining `ds` with `db`.  
+
+```{r}
+
+```
+
+If we'd like, we can also make adjustments for the opponent and the season. If, for example, the opponent allowed 1 more point than league average, we'll adjust average score up by 1.
+
+```{r}
+dl = db %>%
+  group_by(season) %>%
+  summarise(lg.avg.score = mean(score)) 
+head(dl,2)
+```
+
+```{r}
+ds = ds %>%
+  left_join(dl, 
+            by = 'season') %>%
+  
+  mutate(score.above.lg.avg     = avg.score     - lg.avg.score,
+         opp.score.above.lg.avg = avg.opp.score - lg.avg.score)
+  
+```
+
+```{r}
+dd = dd %>%
+  left_join(ds %>% select(team, 
+                          season, 
+                          opp.score.above.lg.avg), 
+            by = c('opp' = 'team', 
+                   'prev.season' = 'season')) %>%
+  left_join(dl, 
+            by = 'season') %>%
+  left_join(dl, 
+            by = c('prev.season' = 'season'), 
+            suffix = c('', '.prev')) %>%
+  rename(opp.score.above.lg.avg.prev = opp.score.above.lg.avg) %>%
+  mutate(avg.score.prev.adj = 
+           avg.score.prev +
+           opp.score.above.lg.avg.prev +
+           lg.avg.score - lg.avg.score.prev) %>%
+  
+  select(date, team, score, 
+         opp, opp.score, season,
+         ha, gid, 
+         avg.score.prev, avg.score.prev.adj)
+head(dd,2)
+```
+
+
+Let's see if there is a relationship between the previous season's average score (adjusted) and the `score` for the `team` in each game. 
+
+```{r fig.width = 5, fig.height = 5}
+
+```
+
+Note that `score` appears fairly normally distributed.
+
+```{r}
+
+```
+
+
+```{r fig.width=6, fig.height=6}
+
+```
+
+The tails don't look perfect, but this will be better later when we include more information than simply average points from the previous season.  
+
+Also, what we actually need is not that `score` is normally distributed, but that `score` is normally distributed *for a given set of predictors*, or in this case, for a given value of `avg.score.prev`. Note that if we look at a single value of `avg.score.prev`, there may be few or no observations that have that exact value of `avg.score.prev`, so we will look at small ranges of `avg.score.prev`.
+
+If we look at the distribution of `score` for different subsets of our predictor `avg.score.prev`, it should look roughly normal for each subset. We can eyeball this by looking at the scatter plot. But let's actually plot it, in part to practice data summarization and visualization, and in part because we'll want to create similar visualizations later in other situations in which it might be less easy to eyeball.  
+
+We can bin our data using the function `cut_interval`.
+
+```{r}
+
+```
+
+Let's plot the distribution of score separately for every bin. 
+
+```{r}
+
+```
+
+Hmm, it would be nice to have a vertical line showing the mean for every bin. 
+
+```{r}
+
+```
+
+We see that the means increase with the bins (except for bins with small sample size issue). We also, unfortunately, see that the variances seem to increase as well. Note that if we think our outcome is roughly normal for every $x$, and we expect the variance to be roughly equal for all subsets. The constant variance assumption in linear regression is violated somewhat, but let's go with it for now. This will get better when we consider more information that simply `avg.score.prev`. 
+
+Let's plot our histograms with the vertical lines.
+
+```{r fig.height=5, fig.width=5}
+g = ggplot(data = dd, 
+       aes(x = score))+
+  geom_histogram(binwidth = 5) + 
+
+
+g %>% 
+  pub(type = 'hist',
+      facet = T, 
+      base_size = 9)
+```
+
+So `score` appears to be approximately normal for each subset of the predictors, except for those with small sample size. 
+
+What about the linearity assumption? Let's recreate our previous scatter plot, let's add the mean of `score` for each bin at the midpoint of each bin. First, let's find the midpoint of each bin. In this case, the bins are 5 units wide, with integer endpoints, so the midpoints easy to determine as 72.5, 77.5, 82.5, etc.
+
+```{r}
+
+```
+
+Note if it weren't so easy to determine the midpoints, we can use regular expressions to extract the endpoints from the `bin` column.
+
+```{r}
+
+```
+
+Now let's plot the `mean.score` of each bin on the scatter plot, at the midpoint `mid` of each bin. 
+
+```{r fig.width = 6, fig.height = 6}
+g = ggplot(dd,
+           aes(x = avg.score.prev, 
+               y = score)) +
+  geom_point(color = pubdarkgray,
+             alpha = 0.05) + 
+
+  
+
+g %>%
+  pub(type = 'scatter')
+```
+
+The relationship looks pretty linear, at least for the bins with larger sample sizes (larger dots).
+
+

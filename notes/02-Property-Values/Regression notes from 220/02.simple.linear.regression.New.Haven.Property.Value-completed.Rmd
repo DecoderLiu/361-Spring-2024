@@ -1,0 +1,237 @@
+---
+title: "Simple Linear Regression"
+author: "S&DS 220"
+date: "Week 10, Day 1"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, 
+                      warning=FALSE, 
+                      message=FALSE,
+                      comment=NA, 
+                      fig.align='center', 
+                      fig.width=5, 
+                      fig.height=4)
+library(tidyverse)
+library(plotly)
+```
+
+**Tip: to the right of "Knit", click the settings button and choose "Preview in Viewer Pane".**
+
+### Simple Linear Regression 
+The simple linear regression model can be written 
+
+$$ Y = \beta_0 + \beta_1 x + \epsilon, \quad \epsilon \sim N(0, \sigma^2) $$
+
+We can think of this as a deterministic relationship that is linear ($\beta_0 + \beta_1 x$), plus some non-deterministic/randomness component $\epsilon$. 
+
+We use a capital $Y$ for the outcome to indicate that $Y$ is a random variable, which it is since it equals a constant plus a random variable ($\epsilon$). 
+
+To understand this further, let's use $x^*$ to denote a particular value of $x$. For a given $x^*$, we have
+
+1. $E(Y|x^*) = E(\beta_0 + \beta_1 x^* + \epsilon) = \beta_0 + \beta_1 x^* + E(\epsilon) = \beta_0 + \beta_1 x^*$
+2. $V(Y|x^*) = V(\beta_0 + \beta_1 x^* + \epsilon) = V(\epsilon) = \sigma^2$
+3. $Y$ is normally distributed (since it is constant + $\epsilon$ and $\epsilon$ is normal)
+
+So for any given $x^*$, we have that $Y \sim N(\beta_0 + \beta_1 x^*, \sigma^2)$. 
+
+### Our goal
+Our first goal is to find the best estimate of the regression line based on the data that we have.  In other words, given several data points (x,y), what values of the intercept $\beta_0$ and the slope $\beta_1$ give us a line that best fits the data?  In other words, what are the $\beta_0$ and $\beta_1$ that give us this line: 
+
+```{r}
+d = read.csv('NewHavenHousing.csv')
+
+## remove houses over $500k, 5000 sq ft, and 10 acres
+d = d[d$living<=5000 & d$value<=500000 & d$land<=10,]   
+d = d %>% filter(living<=5000, value<=500000, land<=10) ## another way to do the same thing
+d = d %>% mutate(label = paste0('Beds:', beds, 
+                                '\nBaths: ', baths, 
+                                '\nAC: ', ac, 
+                                '\nStyle: ', style, 
+                                '\nGrade: ', grade, 
+                                '\nAddress: ', address), 
+                 highgrade = grade %in% c('Very Good', 'Vg/Exc',
+                                          'Excellent', 'Excellent +', 
+                                          'Superior', 'Superior +'))
+g = ggplot(data=d, aes(x=living, y=value, label=label))+
+  geom_point()+
+  geom_smooth(method='lm') 
+ggplotly(g)
+```
+
+## Estimating $\beta_0$ and $\beta_1$
+So how do we get this regression line? Which line best fits the data? First we need some notion of "best fit".  We'll do this by minimizing the sum of the squares of the distance between the height of the points and the height of the line: 
+
+$$\sum_{j=1}^n [y_j - (\beta_0 + \beta_1x_j)]^2 = f(\beta_0, \beta_1)$$
+
+When we find the best fit line for linear regression, we want to find the $\beta_0$ and $\beta_1$ that minimize this sum of squared vertical distances. There are a couple ways this can be done: 
+
+- Calculus: take partial derivatives with respect to $\beta_0$ and $\beta_1$ (take the gradient) and set those equal to 0. You get 2 equations with two unknowns and you can solve for $\beta_0$ and $\beta_1.$
+- Linear Algebra: write the regression model in matrix form ($Y = X\beta +\epsilon$), then solve the equation $X^TX\beta = X^TY$ for $\beta$ by multiplying both sides by $(X^TX)^{-1}.$
+
+If you haven't had calculus or linear algebra that's ok, we'll be using `R` anyway.  Using calculus or linear algebra, we can show that 
+
+$$ \hat{\beta_1} = \frac{S_{xy}}{S_{xx}} \\
+ \hat{\beta_0} = \bar{y} - \hat{\beta_1}\bar{x}$$
+ 
+where $S_{xy} =  \sum(x_j - \bar{x})(y_j-\bar{y})$ and $S_{xx} = \sum (x_j-\bar{x})^2$.  
+
+For our data, we get
+```{r}
+sxy   = sum((d$living - mean(d$living))*(d$value - mean(d$value)))
+sxx   = sum((d$living - mean(d$living))^2)
+beta1 = sxy/sxx
+beta0 = mean(d$value) - beta1*mean(d$living)
+beta1
+beta0
+```
+
+Fortunately, we don't have to do this manually every time. Or ever. We can use the function `lm` to compute $\hat{\beta_1}$ and $\hat{\beta_0}$.
+
+```{r}
+m1 = lm(value ~ living, data=d)
+m1$coefficients
+```
+The first number is our estimate $\hat{\beta_0}$ of the intercept $\beta_0$, and the second number is the estimate $\hat{\beta_1}$ of the slope $\beta_1$ associated with the predictor `living`. These match the estimates we got manually above.  We can access the coefficients using `m1$coefficients` and can store them as objects to use later.
+
+```{r}
+beta0 = as.numeric(m1$coefficients[1])
+beta1 = as.numeric(m1$coefficients[2])
+beta0
+beta1
+```
+
+Now let's plot the regression line $E(Y|x) = \hat{\beta_0} + \hat{\beta_1}x$ on top of our original graph to show that it corresponds to the line we got with `geom_smooth`. Recall that we had
+
+```{r}
+g = ggplot(data=d, aes(x=living, y=value))+
+  geom_point()+
+  geom_smooth(method='lm', se=F, size=1)
+g
+```
+
+If we add a line in red that has our estimated slope and intercept, the red line is directly on top of the blue line and we confirm that it is the same line generated from `geom_smooth`.
+
+```{r}
+g = ggplot(data=d, aes(x=living, y=value))+
+  geom_point()+
+  geom_smooth(method='lm', se=F, size=1)+ ## auto-magically generate the line
+  geom_abline(intercept=beta0, slope = beta1, color='red', size=1) ## line based on the results from lm()
+g
+```
+
+Note that the regression line seems to fit the data well for smaller living areas, but seems to under-predict value for larger living areas. There is a separate cloud of points above $300,000 that seems different than the others. This is likely because there are other important characteristics of a house that is related to its value. We'll return to this later. 
+
+### Finding predicted values for E(Y|x)
+Now that we have $\hat{\beta_0}$ and $\hat{\beta_1}$, we can get an estimate of $E(Y|x)$, or $\hat{y}$, for a given $x$, say $x=1500$, by computing $\hat{y} = \hat{\beta_0} +\hat{\beta_1} \cdot 1500$:
+
+```{r}
+yhat = beta0 + beta1*1500
+yhat
+
+```
+
+We can also do this in R using the `predict` function:
+
+```{r}
+yhat = predict(object=m1, newdata=data.frame(living=1500))
+yhat
+```
+
+We can also get all of the predicted values for all houses in our data frame using `predict` with `newdata=d`: 
+```{r}
+d$yhat = predict(object=m1, newdata=d)
+head(d[,c('address', 'value', 'living', 'yhat')])
+```
+
+
+## Notation
+Let's make another plot with just a few of the points so we can draw some more stuff on it and use it to help us understand our new notation. (Ignore the code used to make this plot for now.) 
+```{r, echo=F}
+####### Ignore this code! ####
+rows = c(100,200,300,400,500,600,700,800) ## take only 8 data points.
+dd = d[rows,]; rownames(dd)=1:nrow(dd)
+dd = dd %>% arrange(living) %>% select(-yhat)
+#d = d[order(d$living, decreasing=T),]
+m2 = lm(value ~ living, data=dd)
+dd$fitted.value=predict(m2)
+#dd$hat.label = bquote(expression(hat(y)[.(rownames(dd))]))
+col = 'gray90'
+yhat = predict(m2, newdata=data.frame(living=1500))
+g = ggplot(data=dd, aes(x=living, y=value))+
+  geom_vline(xintercept=mean(dd$living), color='gray85')+
+  geom_hline(yintercept=mean(dd$value   ), color='gray85')+
+  geom_smooth(method='lm', se=FALSE)+
+  geom_point()+
+  
+  ## some points on the line
+  geom_point(aes(x=living, y=fitted.value), color='blue')+
+  
+  ## mean line
+  
+  
+  ## label 1, 2, j, and n
+  geom_text(data=dd[c(1,4,5,8),], aes(x=living, y=value), 
+            label=c(#paste0('(',expression(x[1]),',',expression(y[1]),')'),  
+              expression(paste("(", x[1], ",", y[1], ')')),
+              expression(paste("(", x[4], ",", y[4], ')')),
+              expression(paste("(", x[j], ",", y[j], ')')),
+              expression(paste("(", x[8], ",", y[8], ')'))),
+            nudge_y = c(-1500,1500,-1500,-1500))+
+  geom_text(data=dd[c(1,4,5,8),], 
+            aes(x=living,y=fitted.value), color='blue', label=c(expression(hat(y[1])),
+                                                                expression(hat(y[4])),
+                                                                expression(hat(y[j])),
+                                                                expression(hat(y[8]))), 
+            nudge_y = c(3000,-3000,3000,3000))+
+  
+  ## line segments
+  geom_segment(aes(x = living, y = value, xend = living, yend = fitted.value))+
+  geom_text(data=dd[c(1,4,5,8),], 
+            aes(x=living, y=(value+fitted.value)/2),
+            label=c(expression(e[1]),
+                    expression(e[4]), 
+                    expression(e[j]), 
+                    expression(e[8])), nudge_x = c(25,25,25,25))+ 
+  
+  ## red x point and line segment
+  geom_segment( x=1500, y=0, xend=1500, yend=yhat, color='red')+
+  geom_point(   x=1500, y=yhat , color='red')+
+  geom_text(aes(x=1500, y=yhat), color='red', label=expression(hat(y)), nudge_y=2000)+
+  #scale_x_continuous(breaks = c(0,20,40,60,80, 85,100,120,140), 
+  #                   labels = c(0,20,40,60,80,"x",100,120,140))+theme_bw()+
+  theme(panel.grid.minor.x=element_blank(), 
+        panel.grid.major.x=element_line(color=c(col,col,col,NA,col,col,col)),
+        axis.text.x = element_text(color = c(1,1,1,2,1,1,1,1,1)),
+        axis.ticks.x = element_line(color = c("black", "black", "black", "red", "black", "black")))
+g
+```
+
+We have plotted some points denoted $(x_j, y_j)$, drawn a regression line through those points, and have put some vertical lines between the points and the regression line.  
+
+We will use a hat $\hat{}$ over a variable or parameter to denote that it is our estimate of that variable or parameter. For example, $\hat{\beta_0}$ and $\hat{\beta_1}$ will be our estimates of the parameters $\beta_0$ and $\beta_1$.  Also, we will use $\hat{y}$ to refer to our estimate of $y$ for some value of $x$.  Our estimate $\hat{y}$ will come from our estimated regression line: 
+
+$$\hat{y} = \hat{\beta_0} + \hat{\beta_1} x$$
+
+and we will interpret it as the expected value of $y$ for a given value of $x$ based on our estimated regression line. 
+
+We emphasize that this regression line is different than the regression model 
+
+$$ Y = \beta_0 + \beta_1 x + \epsilon $$
+
+
+in two important ways:
+
+1. It contains the estimates of the slope and intercept parameters, as opposed to the unknown "true" values
+2. It does not contain the error term
+
+Note that $e_1$ represents the vertical distance between $y_1$ and $\hat{y_1}$, $e_2$ is the distance between $y_2$ and $\hat{y_2}$, and so on: 
+$$ e_j = y_j - \hat{y_j} $$
+These $e_j$'s are called residuals, and these are the quantities that we hope are small. 
+
+
+
+
+
+

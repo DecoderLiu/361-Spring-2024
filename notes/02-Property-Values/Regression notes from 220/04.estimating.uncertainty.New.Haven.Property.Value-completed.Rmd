@@ -1,0 +1,271 @@
+---
+title: "Estimating uncertainty"
+author: "S&DS 220"
+date: "Week 10, Day 2"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, 
+                      warning=FALSE, 
+                      message=FALSE,
+                      comment=NA, 
+                      fig.align='center', 
+                      fig.width=5, 
+                      fig.height=5)
+library(tidyverse)
+```
+
+```{r}
+d = read.csv('NewHavenHousing.csv')
+
+## remove houses over $500k, 5000 sq ft, and 10 acres
+d = d[d$living<=5000 & d$value<=500000 & d$land<=10,]   
+d = d %>% filter(living<=5000, value<=500000, land<=10) ## same
+
+m1 = lm(value ~ living, data=d)
+d$yhat = predict(m1, newdata=d)
+```
+
+We have discussed how to form a simple linear regression model, how to find $\hat{\beta_0}$ and $\hat{\beta_1}$, and how to assess how much variance in $y$ is explained by the model using $R^2$.  We now discuss another important topic: uncertainty in the estimates.  How sure our we about the coefficients that we got from our model? If we get a value of 0.08 for $\hat{\beta_1}$, can we be confident that the true value is close to 0.08, say between 0.07 and 0.09, or can we only be confident that it is between 0.02 and 0.14? We would like to have a systematic way of understanding and communicating the uncertainty.
+
+There are two kinds of uncertainty that we will discuss: 
+
+1. Uncertainty in our coefficients, both $\hat{\beta_0}$ and $\hat{\beta_1}$, the slope and intercept in our regression model. 
+2. Uncertainty in our predictions, both $\hat{y}$, our prediction for the expected value of $y$ given $x$ that we get from our regression model, and also any individual $y$.
+
+These will require us knowing/estimating $\sigma^2$, so we'll discuss that first.
+
+## Estimate of the variance of the random error
+Recall that one of our model assumptions is that the error term $\epsilon$ is normally distributed with mean 0 and variable $\sigma^2$.  The true value of $\sigma^2$ is typically unknown, but we can estimate $\sigma^2$ using 
+
+$$ s^2 = \hat{\sigma}^2 = \frac{SSE}{n-2} $$
+
+where $n$ is the number of observations in our data (the number of rows in our data set). The square root of $\hat{\sigma}^2$ is the residual standard deviation.  In our case we have 
+```{r}
+sse = sum((d$value - d$yhat)^2)
+s2 = sse/(nrow(d)-2)
+s2
+s=sqrt(s2)
+s
+```
+Since the residuals are automatically computed by the `lm` function, and can be found in `m1$residuals` the quantities $\hat{\sigma}^2$ and $\hat{\sigma}$ can also be found in the following way
+```{r}
+s2 = sum(m1$residuals^2)/(nrow(d)-2)
+s = sqrt(s2)
+s
+```
+
+Note that output of `summary(m1)` contains "Residual standard error: 43901.66". 
+
+```{r}
+summary(m1)
+```
+
+
+This can also be found directly by 
+```{r}
+summary(m1)$sigma
+```
+Not sure why "Residual standard error in the summary and `summary(m1)$sigma` don't match exactly, but I think it is because of rounding. It should be the same: 
+
+```{r}
+m2 = lm(mpg~wt, data=mtcars)
+summary(m2)
+summary(m2)$sigma
+sigma(m2)
+```
+
+
+## Sampling Distribution of $\hat{\beta_1}$
+Since $\hat{\beta_1}$ is a statistic, it has a sampling distribution.  It can be shown that
+
+1. $E(\hat{\beta_1}) = \beta_1$
+2. $V(\hat{\beta_1}) = \frac{\sigma^2}{S_{xx}}$
+3. $\hat{\beta_1}$ is normal 
+
+Since $\sigma^2$ is unknown, it is estimated by $s^2$, and $V(\hat{\beta_1})$ can be estimated with $s^2_{\hat{\beta_1}} = \frac{s^2}{S_{xx}}$. 
+
+```{r}
+sxx = sum((d$living - mean(d$living))^2)
+s2beta1 = s2/sxx
+sbeta1 = sqrt(s2beta1)
+sbeta1
+```
+
+Note the summary function produces not just the estimates of the coefficients, but also contains the standard errors of the coefficients. We see the number above in the second row of the summary.
+
+```{r}
+summary(m1)$coefficient
+
+```
+
+## Confidence Interval for $\beta_1$
+These standard errors can be used to determine a confidence interval for our coefficients.  Since $\hat{\beta_1}$ is normal we know that the standardized version follows a $t$-distribution with $n-2$ degrees of freedom: 
+
+$$T = \frac{\hat{\beta_1} - \beta_1}{S_{\hat{\beta_1}}} \sim t_{n-2}$$ 
+
+The confidence interval is then 
+
+$$\hat{\beta_1} \pm t_{n-2}^* s_{\hat\beta_1}$$
+where $t_{n-2}^*$ depends on the confidence level and $n$.  
+
+For our example we can find a 95% confidence interval for $\beta_1$ like this.
+```{r}
+n = nrow(d)
+tstar = qt(.975, df = n-2)
+tstar
+beta1 = as.numeric(m1$coefficients[2])
+beta1 - tstar*sbeta1
+beta1 + tstar*sbeta1
+```
+Instead of doing this manually, we'll let `R` do the work for us and find the "95% confidence interval" for both of our coefficients.
+
+```{r}
+confint(m1, parm=c('living'), level=.95)
+#confint(m1, parm = '(Intercept)', level=.95)
+```
+When we say "the 95% confidence interval for $\hat{\beta}_1$ is (87.67, 90.56)", we mean that the probability that the interval (87.67, 90.56) contains the true value of $\beta_1$ is 0.95.  
+
+## Model utility test
+Another question we might have is "do we have sufficient evidence that $\beta_1$ is different from 0?"  If $\beta_1$ were actually 0, that would mean that there is no linear relationship between $y$ and $x$, and that our model would not be useful in predicting $y$.  In other words, if the true regression line were $y = \beta_0 + 0 \cdot x$, then knowing $x$ would not give use any information about $y$. Our estimate of $y$ would always be $\beta_0$.
+
+We can perform a hypothesis test where
+
+- $H_0: \beta_1 = 0$
+- $H_a: \beta_1 \neq 0$
+
+We assume the null hypothesis is true, calculate test statistic $t = \frac{\hat\beta_1 - 0}{s_{\hat\beta_1}}$ and find $P(T\leq - t \,\, or \,\, T\geq t)$ as before. In our example
+
+```{r}
+t = beta1/sbeta1
+t
+pt(-t, df=n-2)*2
+```
+Since $t$ is huge, the $p$-value is essentially 0. (It isn't exactly 0, but it is rounding to 0.)
+
+The 3rd and 4th column in output of the `summary` function gives us the $t$ and $p$-values. 
+```{r}
+summary(m1)
+```
+The values match what we got above. 
+
+The interpretation of the $p$-value from this hypothesis test is the probability of getting these data if $\beta_1$ were actually 0. If this probability is sufficiently low, meaning it would be very unlikely to get these data if $\beta_1$ were actually 0, then we reject the hypothesis that $\beta_1$ is 0. "Sufficiently low" (usually below 0.1 or 0.05), but could depend on the application. For us, we will use typically use the cutoff of 0.05 unless otherwise noted. 
+
+In our example, the p-value for $\beta_1$ is extremely low.  Note that an output like `e-16` means $10^{-16}$, which is *really* small. So we can reject the hypothesis that $\beta_1$ is 0.  The stars `***` indicate that it is less than 0.001. Note that the row with `Signif. codes` summarizes the meaning of other stars and symbols. 
+
+Also, note that our 95% confidence interval for $\hat{\beta_1}$ does not contain 0, which corresponds to the result we got for this hypothesis test. In fact, the confidence interval is very far away from zero. That aligns with the p-value in this hypothesis test being very close to 0. 
+
+## Sampling Distribution for $\hat{Y}$
+Note that $\hat Y$ is a statistic and has a sampling distribution since $\hat\beta_0 + \hat\beta_1x^*$ and $\hat\beta_0$ and $\hat\beta_1$ are statistics.  It can be shown that 
+
+1. $E(\hat Y) = E(\hat\beta_0 + \hat\beta_1x^*)$
+2. $V(\hat Y) = \sigma^2\Big(\frac{1}{n} + \frac{(x^* - \bar x)^2}{S_{xx}}\Big)$
+3. $\hat Y$ is normal. 
+
+Since $\sigma$ is unknown we estimate the variance using 
+
+$$s^2_{\hat Y} = s^2\Big(\frac{1}{n} + \frac{(x^* - \bar x)^2}{S_{xx}}\Big)$$
+
+
+## CI for $E(Y|x^*)$
+The standardized variable version of $\hat Y$ has a $t$ distribution with $n-2$ df
+
+$$T = \frac{\hat Y - (\beta_0 + \beta_1x^*)}{S_{\hat y}} \sim t_{n-2}$$
+The CI for the expected value of $Y$ when $x=x^*$ is 
+$$\hat y \pm t^*_{n-2} s_{\hat Y}.$$ 
+Let's use the first observation in our data as an example.
+
+```{r}
+d$yhat = predict(m1, newdata=d)
+xstar = d$living[1]
+yhat = d$yhat[1]
+
+## find standard deviation of yhat
+sy = s*sqrt(1/n + (xstar - mean(d$living))^2/sxx)
+sy
+
+t = qt(.975, df=n-2)
+t
+
+## find CI
+yhat - t*sy ## same t as above
+yhat + t*sy 
+```
+
+To find the standard errors and 95% confidence intervals for all of our $\hat{y}$'s at once, we can use the `predict` function:
+```{r}
+d$yhat    = predict(m1, newdata=d)
+d$yhat.se = predict(m1, newdata=d, se.fit=T)$se.fit
+d$yhat.lower = predict(m1, newdata=d, interval = 'confidence', level=.95)[,'lwr']
+d$yhat.upper = predict(m1, newdata=d, interval = 'confidence', level=.95)[,'upr']
+head(d[,c('living', 'value', 'yhat', 'yhat.se', 'yhat.lower', 'yhat.upper')],2)
+
+```
+The standard errors are fairly small relative to the magnitude of the predictions so we can be pretty confident in our $\hat{y}$ estimates.  Correspondingly, the confidence intervals are fairly small. For example, we estimate that the expected value of all the $y$'s at $x=1475$ is about 123363.8, with a 95% confidence interval of about $(122427.8, 124299.9)$.
+
+These confidence intervals are the gray bands that appear around the blue line when we use `geom_smooth`. In this case, the gray bands are very small. 
+```{r}
+ggplot(data=d, aes(x=living, y=value))+
+  geom_point()+
+  geom_smooth(method='lm')+
+  theme_minimal()
+```
+
+Let's make a similar plot with the `mtcars` data where the gray bands are more visible. 
+
+```{r}
+head(mtcars)
+ggplot(mtcars, aes(x=wt, y=mpg))+
+  geom_point()+
+  geom_smooth(method='lm')
+```
+
+## Prediction intervals for $y$
+
+We emphasize the standard errors and confidence intervals suggest that given a value of $x$, the true *mean* value of $y$ is pretty close to our estimate $\hat{y}$.  In other words, we are pretty sure about the height of our regression line at that particular $x$. 
+The gray bands in the figure above are the possible heights that the blue line could most likely be.  
+
+But we are not saying that all values of $y$ will be close to $\hat{y}$. Those could be spread out above and below the mean. The blue line is what we expect the average to be over lots and lots of individual values of $y$'s. 
+
+If we would like to get an idea of an expected range for the individual values of $y$ for a given $x$, we can find the 95% *prediction interval*.  With similar reasoning as above, we can get a PI for a future $Y$ observation using 
+$$\hat y \pm t^*_{n-2} \sqrt{s^2 + s^2_{\hat Y}}$$  
+
+```{r}
+yhat - t*sqrt(s^2+sy^2) ## same t as above
+yhat + t*sqrt(s^2+sy^2)
+```
+We can use the `predict` function to get PIs for all of our $y$'s at once. 
+```{r}
+d$y.lower = predict(m1, newdata=d, interval='prediction', level=.95)[,'lwr']
+d$y.upper = predict(m1, newdata=d, interval='prediction', level=.95)[,'upr']
+head(d)
+```
+
+The interpretation of a prediction interval is that we can expect the prediction interval to contain the observed values of $y$ 95% percent of the time. Notice that the prediction intervals are **much** wider than the confidence intervals. This means that we are much more sure about the *mean* value of $y_j$s than any individual value of $y_j$. 
+
+In the figure above, we can think of the prediction interval as being the estimated vertical spread of the points that we would expect for a particular $x$.  We plot lines for the prediction interval in red below.  
+
+```{r}
+ggplot(data=d, aes(x=living, y=value))+
+  geom_point()+
+  geom_smooth(method='lm')+
+  geom_line(aes(x=living, y=y.lower), color='red')+
+  geom_line(aes(x=living, y=y.upper), color='red')
+
+```
+
+It appears as though roughly 95% of the points are between the red lines for smaller living areas. For higher living areas, the prediction interval (and the regression line itself) don't appear to be great. We'll return to that soon. 
+
+If we'd like, we can count the points in that are below the upper red line, and above the lower red line like this:
+
+```{r}
+pts.inside = length(which(d$value >= d$y.lower & 
+                            d$value <= d$y.upper))
+total.points = nrow(d)
+pts.inside/total.points
+
+```
+We found that 94% of the points are inside the red lines, which is pretty close to 95%.  
+
+
