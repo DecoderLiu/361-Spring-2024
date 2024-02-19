@@ -1,0 +1,318 @@
+---
+title: "PSET 03 - Linear Regression"
+author: "S&DS 361"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(pubtheme)
+library(leaflet)
+library(htmltools)
+
+```
+
+## Part 1: Property values
+
+The following data set contains information about properties in Branford, CT. Each row is a property, and the columns contain information about that property.
+
+```{r}
+b = read.csv('data/branford.csv')
+
+## let's get rid of Mobile Homes
+## and keep only the columns we will be working with
+b = b %>% 
+  filter(style!='Mobile Home') %>% 
+  select(value, living, beds, baths, halfbaths, miles_to_coastline) 
+head(b,2)
+```
+
+The column `value` indicates the assessed value of that property. The column `living` indicates the square feet of the living area of the property, `beds` is the number of bedrooms, `baths` is the number of full bathrooms, and `halfbaths` is the number of half bathrooms.
+
+#### 1. Fit a linear regression model using `log(value)` as the outcome and `living` as a predictor, and another model with `log(living)` as a predictor.  Which model do you think is better? Why?
+
+First let's plot. 
+
+```{r}
+ggplot(b, aes(living, log(value)))+
+  geom_point()
+
+ggplot(b, aes(log(living), log(value)))+
+  geom_point()
+```
+
+Since the relationship looks more linear using `log(living)`, I'm probably going to prefer that one. 
+
+```{r}
+lm1 = lm(log(value) ~ living, data=b); summary(lm1)
+lm2 = lm(log(value) ~ log(living), data=b); summary(lm2)
+```
+
+Check the residuals:
+
+```{r}
+b$pred1 = predict(lm1, newdata=b)
+b$pred2 = predict(lm2, newdata=b)
+b$res1  = log(b$value) - b$pred1
+b$res2  = log(b$value) - b$pred2
+
+ggplot(b, aes(    living , res1))+geom_point()
+ggplot(b, aes(log(living), res2))+geom_point()
+
+```
+
+Hmm, well I'm somewhat surprised that the Adjusted R^2 is actually slightly higher with `living` than `log(living)`.  But the linear regression assumptions are more closely met with `log(living)` (relationship looks more linear, residual plot looks slightly better). There definitely appears to be important predictors missing in both, but adding predictors to a model with `log(living)` seems more promising, despite the fact that the Adjusted R^2 is slighly lower.  
+
+#### 2. Try adding `beds`, `baths`, and `halfbaths` as predictors to the model above. Do those predictors improve the model? Why or why not?
+
+```{r}
+lm3 = lm(log(value) ~ log(living) + beds, data=b); summary(lm3)
+```
+
+The predictor `beds` improves the Adjusted R^2 slightly. The sign of the coefficient of `beds` is a bit counterintuitive, as we would expect that additional `beds` would increase the value of a house. This odd result is likely because of the correlation between `living` and `beds`. Also, we should note that the size of the beds coefficient in practical terms is very small, so while the sign is negative, it doesn't have a big impact on the predicted value of the property. 
+
+On one hand, `beds` improves the Adjusted R^2 slightly, so we might initially think we should keep it in the model because of that. On the other hand, if we ever have to discuss the results of the model with someone who does not have experience with regression and correlated predictors, we may choose to remove it since (1) it barely improves Adjusted R^2, and (2) it could be hard to explain a negative coefficient for `beds` to someone else. For simplicity, I'll remove `beds`.  The very small improvement in Adjusted R^2 doesn't outweigh the annoyance of having a negative coefficient. 
+
+Let's try adding `baths` and `halfbaths`.
+
+```{r}
+lm5 = lm(log(value) ~ log(living) + baths, data=b); summary(lm5)
+lm6 = lm(log(value) ~ log(living) + baths + halfbaths, data=b); summary(lm6)
+```
+
+Both `baths` and `halfbaths` improved Adjusted R^2 and have the expected sign, so we'll keep them in the model. 
+
+#### 3. Create a column `baths2` that is the sum of `baths` and 0.5*`halfbaths`. Fit a linear regression model with `living` and `beds` as before, but use `baths2` instead of `baths` and `halfbaths`. Is this model better, worse or similar? Why?
+
+```{r}
+b$baths2 = b$baths + 0.5*b$halfbaths
+lm7 = lm(log(value) ~ log(living) + baths2, data=b); summary(lm7)
+```
+
+The Adjusted R^2 went down only very slightly with `baths2` instead of `baths` and `halfbaths`, so we could choose between `lm6` and `lm7` based on whichever one we think has the easiest or most convenient interpretation for our purposes. For simplicity, I'll choose `baths2` since  bathroom summaries for properties seem to be given as "Bathrooms: 2.5" more often than "Full bathrooms: 2, Half bathrooms: 0.5", so it may be more natural to express bathrooms in this way.  
+
+
+#### 4. Plot `log(value)` vs `log(miles_to_coastline)`. Does this relationship look more linear than `log(value)` vs `miles_to_coastline`?
+
+```{r}
+ggplot(b, aes(miles_to_coastline, 
+              log(value)))+
+  geom_point()+
+  geom_smooth()+
+  geom_smooth(method='lm', color='red')
+```
+
+```{r}
+ggplot(b, aes(log(miles_to_coastline), 
+              log(value)))+
+  geom_point()+
+  geom_smooth()+
+  geom_smooth(method='lm', color='red')
+```
+
+Ugh, neither of these are great, but `log(miles_to_coastline)` has a less extreme peak, so we'll go with that one. It is far from perfect, and we'll want to do something differently eventually later in the course.
+
+#### 5. Fit a model like your model above but with `miles_to_coastline` as an additional predictor, and one like your model above but with `log(miles_to_coastline)` as an additional predictor. Which model is better? Why or why not? Explain what you mean by "better".
+
+```{r}
+lm8 = lm(log(value) ~ log(living) + baths2 +     miles_to_coastline , data=b); summary(lm8)
+lm9 = lm(log(value) ~ log(living) + baths2 + log(miles_to_coastline), data=b); summary(lm9)
+
+```
+
+Both of these help a lot. The Adjusted R^2 with `log(miles_to_coastline)` is significantly higher, so we'll choose that one. The interpretation is slightly harder since the predictor is log transformed, but the increase in Adjusted R^2 outweighs that. 
+
+
+
+## Part 2: Census Data
+
+The following data set contains information from the US Census. Each row is a census tract, and the columns contain information about that census tract. 
+
+```{r}
+census = readRDS('data/tracts.and.census.with.EV.stations.rds')
+census = census[census$state=='CT',]
+df = census@data ## just the data frame, without the polygons
+```
+
+#### 6. Build a simple linear regression model that describes the relationship between median household income `hh.income` and median housing value `house.value` by census tract. Explain how you decided which was the independent and which was the dependent variable. Describe any potential issues with your choice, if any.  
+
+Hmm, first I'll plot this. I'll choose `hh.income` as the independent variable since my first thought is that high paying jobs in an area can make property values increase. But these two are interrelated and I guess there is not a clear one directional relationship. 
+
+```{r}
+ggplot(df, aes(x=hh.income, y=house.value))+
+  geom_point(alpha=0.3)+
+  geom_smooth()+
+  geom_smooth(method='lm', color='red')
+
+```
+
+This makes me think that using a log transform might be helpful.
+
+```{r}
+ggplot(df, aes(x=hh.income, y=log(house.value)))+
+  geom_point(alpha=0.3)+
+  geom_smooth()+
+  geom_smooth(method='lm', color='red')
+```
+
+That looks much closer to being a linear relationship. Let's build a model.
+
+```{r}
+lm10 = lm(log(house.value) ~ hh.income, data=df); summary(lm10)
+```
+
+#### 7. For which census tracts in CT does your model perform well? Not as well? What do those census tracts have in common?
+
+Let's find the residuals. 
+
+```{r}
+df$pred = predict(lm10, newdata=df)
+
+df  = df %>%
+  mutate(res = log(house.value) - pred) 
+
+df %>% 
+  select(tract, county, state, res) %>%
+  arrange(desc(res)) %>%
+  head(10)
+```
+
+Hmm, we have lots of Fairfield County tracts and one New Haven County tract. So these are probably the tracts near NYC and the tract near Yale. Checking Google maps confirms that Fairfield County is close to NYC. Googling the tracts and getting a website like this https://data.usatoday.com/american-community-survey/block-group-4-census-tract-107-fairfield-county-connecticut/labor-statistics/unemployed-civilians/num/15000US090010107004/ confirms that those tracts are in the southwestern part of the county, closest to NYC. Googling the New Haven tract confirms that it is near Yale. 
+
+
+
+**Optional.** We haven't discussed plotting maps yet, so this isn't expected.
+
+We can also plot it on a map. We need to use the `census` object since `df` is only the data frame and doesn't have the polygon information. 
+
+```{r fig.width=7, fig.height=6}
+
+census$res = df$res
+census$label = paste0('Tract: ', census$tract, '<br>',
+                      census$county, '<br>', 
+                      census$state, '<br>', 
+                      'Median House Value: ', census$house.value, '<br>', 
+                      'Median Household Income: ', census$hh.income)
+
+pal1 = colorNumeric(palette = c(pubbackgray, pubblue), domain = NULL); 
+
+leaflet() %>%
+  addTiles() %>%
+  addPolygons(data = census,
+              fillColor = ~pal1(res),
+              label= ~label %>% lapply(HTML),
+              fillOpacity = 0.7,
+              color = 'black',
+              weight = 1) %>%
+  setView(lng=-72.79458, lat=41.51979, zoom=9)
+```
+
+As suspected, the New Haven tract is Prospect Park near Yale, and the Fairfield tracts are near NYC (including a couple small islands near NYC that I never noticed until now). 
+
+The tracts are outliers because of their location, and in particular, some aspect of location that we are not accounting for in the model. In this case, we do not account for the fact that these tracts are near NYC and Yale, which are likely to be important predictors of house value.
+
+
+## Part 3: Super Bowl predictions
+
+The Superbowl is the championship game of the National Football League (NFL). The game will likely be the most watched broadcast in the US this year (in 2023, the Superbowl has twice the viewership of the next most watched broadcast, according to https://www.sportico.com/law/analysis/2024/super-bowl-security-1234765332/). 
+
+Let's use our regression skills to predict the outcome of this year's Superbowl.
+
+```{r}
+g = readRDS('data/games.rds')
+
+g = g %>% 
+  filter(lg=='nfl', season %in% 2023) %>%
+  select(date, away, home, ascore, hscore, season, gid)
+
+da = g %>% select(date, away, ascore, home, hscore, season, gid) %>% mutate(ha = 'away')
+dh = g %>% select(date, home, hscore, away, ascore, season, gid) %>% mutate(ha = 'home')
+colnames(da) = c('date', 'team', 'score',  'opp', 'opp.score', 'season', 'gid', 'ha')
+colnames(dh) = c('date', 'team', 'score',  'opp', 'opp.score', 'season', 'gid', 'ha')
+dd = bind_rows(da, dh) %>% 
+  arrange(date, gid)
+head(dd)
+
+## Super Bowl, and games before the Super Bowl
+sb = dd %>% filter(date=='2024-02-11')
+dd = dd %>% filter(date< '2024-02-11')
+```
+
+#### 8. Build a model with `score` as the outcome and `ha` (home or away), `team`, and `opp` as the predictors, using only games played before the Super Bowl (the data frame `dd`). Are the linear regression assumptions satisfied?
+
+```{r}
+lm11 = lm(score ~ ha + team + opp, data=dd)
+## summary(lm11) ## huge to I'm commenting it out. 
+
+dd$pred = predict(lm11, newdata=dd)
+dd$res  = dd$score - dd$pred
+ggplot(dd, aes(x=res))+
+  geom_histogram()
+
+```
+
+The residuals look kind of normal-ish, which is somewhat surprising because the scores in football are not normal: for `score` there are peaks at 7, 10, etc., which are much more common scores than others. We can see this if we plot a histogram of the scores and set binwidth to 1.
+
+```{r}
+ggplot(dd, aes(x=score))+
+  geom_histogram(binwidth = 1)
+```
+
+The residual plot certainly has bumps, but it's normal-ish, and close enough that we'll just go with it, especially since we haven't talked about what to do when we don't have normality. 
+
+#### 9. Use this model to predict the outcome of the Super Bowl. Ignore the fact that the Super Bowl is played at a neutral site.
+
+```{r}
+sb$pred = predict(lm11, newdata=sb)
+sb
+```
+
+According to the model, SF's expected score is 21.1 and KC's expected score is 19.4, so SF is predicted to win. 
+
+**(I wouldn't expect all students to know this or do this, but here's how you could predict for a neutral site game.)** However that uses the the `home` and `away` designations, and the Super Bowl is played at a neutral site. So we need to do something about that. One option is to fit the original model using a manually created indicator variable for home/away that is numeric. 
+
+```{r}
+dd$home = ifelse(dd$ha=='home', 1, 0)
+lm12 = lm(score ~ home + team + opp, data=dd)
+## summary(lm12) ## huge so I'm commenting it out.
+```
+Note that this gives the same results as `lm11`: the coefficients are the same, so the predictions are the same the Adj R^2 is the same, etc. 
+
+```{r}
+summary(lm11)$coefficients %>% head()
+summary(lm12)$coefficients %>% head()
+summary(lm11)$adj.r.squared
+summary(lm12)$adj.r.squared
+dd$pred2 = predict(lm12, newdata=dd)
+dd$res2  = dd$score - dd$pred2
+```
+
+This is because the `lm` function automatically converts the `ha` variable to a numeric 0-1 variable. Now that we are using a numeric 0-1 variable, we can use the value of 0.5 for a neutral site game like the Super Bowl. 
+
+```{r}
+sb = sb %>% mutate(home = 0.5)
+sb$pred2 = predict(lm12, newdata=sb)
+sb
+```
+
+Since KC doesn't have a home field advantage, KC's expected score is lower and SF's expected score is higher.
+
+Another way to do this is make predictions with KC as the home team (like above), and other predict with SF as the home team, and average the predictions. In other words, we'll switch the roles of KC and SF, and average the predictions.  
+
+```{r}
+sb2 = sb %>%
+  mutate(ha = c('home', 'away'))
+sb$pred3 = predict(lm11, newdata=sb2)
+sb$pred/2 + sb$pred3/2
+sb$pred2
+```
+
+#### 10. Suppose the betting odds say that the San Francisco 49ers (SF) are favored to win by 1.5 points. If you bet on the 49ers, and they win by 2 or more points, you win money, and if they win by 1 point or lose, you lose money. Should you bet on the 49ers? If you do this assignment after the Super Bowl, ignore the outcome when answering this question. :)
+
+Since the expected scores are 21.1 and 19.4, and SF is expected to win by 21.1 - 19.4 = 1.7, then we should bet on SF. 
+
+We are ignoring the uncertainty in the estimates, and ignoring the fact that the errors aren't quite normal and scores are definitely not normally distributed, but the conclusion would likely be the same regardless. 
+
