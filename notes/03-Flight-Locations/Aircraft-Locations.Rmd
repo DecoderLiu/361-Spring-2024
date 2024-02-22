@@ -1,0 +1,69 @@
+---
+title: "Aircraft locations"
+author: "S&DS 361"
+date: "2024-02-22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+ADSBexchange.com is the "world's largest public source of unfiltered flight data" (<https://www.adsbexchange.com/>). Free samples of complete data are available for the 1st of every month. The `readsb-hist` data contain "Snapshots of all global airborne traffic are archived every 5 seconds starting May 2020, (prior data is available every 60 secs from starting in July 2016)" (<https://www.adsbexchange.com/data-samples/>). Data fields are described here: <https://www.adsbexchange.com/version-2-api-wip/>. Look for the "aircraft" section.
+
+We'll work with some data scraped from this website. The data are in the file `flight.locations.rds`. 
+
+```{r}
+## Load data and show a preview
+d = readRDS('data/flight.locations.rds')
+head(d)
+
+d = d %>%
+  
+  ## Get rid of rows with missing lat/lon, or 
+  ## aircrafts that are on the ground (or below the ground lol)
+  filter(!is.na(lat), 
+         !is.na(lon),
+         alt>=0) %>%
+  
+  ## find "rough" time zones from each location
+  ## they are rough because time zone borders aren't exactly along
+  ## longitudinal lines
+  mutate(zone = case_when(             lon >= -86  ~ 'EDT', 
+                          lon<= -86  & lon >= -102 ~ 'CDT',
+                          lon<= -102 & lon >= -114 ~ 'MDT/PDT', 
+                          lon<= -114               ~ 'MDT/PDT', 
+                          TRUE ~ 'other')) %>%
+  
+  ## For each hex/flight combo, find the diff in time between observations.
+  ## When diff is more than 10, we'll want to create a new primary key, since 
+  ## this indicates a different flight. 
+  ## (Right now a flight could land in the morning and a flight with the same flight 
+  ## number could take-off at night. Both can have the same `hex` and `flight`).
+  ## So find diff, 
+  ## then create an indicator for diff>10, 
+  ## then cumsum diff within each hex/flight,
+  ## then paste that number hex and flight for the new key
+  group_by(hex, flight) %>%
+  mutate(zone = first(zone), 
+         mins = hr*60+min,
+         diff = c(0,diff(mins)), 
+         diff10 = ifelse(diff>10, 1, 0), 
+         cumul.diff = cumsum(diff10),
+         key = paste0(hex, '.', flight, '.', cumul.diff))
+  
+## count the rows of each flight
+## only keep flights with more than 4 rows.
+d = d %>%
+  group_by(key) %>%
+  mutate(rows = n()) %>%
+  filter(rows>=4)
+
+```
+
+Data exploration: 
+
+```{r}
+
+```
+

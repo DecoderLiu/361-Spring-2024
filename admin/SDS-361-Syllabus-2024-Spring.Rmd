@@ -99,6 +99,8 @@ Part 2 will be open notes, open computer, open internet. You can not communicate
 
 Practice problems will be given a week before the exam.  
 
+**Makeup exams**. With a Dean's note, you can take a makeup exam. We will schedule the makeup within a few days of the original exam based on students' availability. 
+
 **Curving Final Course Grades.** I do not plan on curving final course grades. I may lower some cutoff lines based on where there is a gap in grades. For example, in the situation below I would lower the cutoff for an A from 93 (black line) to 92.5 (red line) because a few students are clustered around 93 and there is a gap in the grades around 92.5. 
 
 ```{r fig.width=4, fig.height=5, warning=F, comment=F, message=F}
