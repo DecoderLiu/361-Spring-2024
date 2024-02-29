@@ -1,0 +1,351 @@
+---
+title: "Aircraft locations"
+author: "S&DS 361"
+date: "2024-02-22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(leaflet)
+library(htmltools)
+library(pubtheme)
+library(gganimate)
+```
+
+ADSBexchange.com is the "world's largest public source of unfiltered flight data" (<https://www.adsbexchange.com/>). Free samples of complete data are available for the 1st of every month. The `readsb-hist` data contain "Snapshots of all global airborne traffic are archived every 5 seconds starting May 2020, (prior data is available every 60 secs from starting in July 2016)" (<https://www.adsbexchange.com/data-samples/>). Data fields are described here: <https://www.adsbexchange.com/version-2-api-wip/>. Look for the "aircraft" section.
+
+We'll work with some data scraped from this website. The data are in the file `flight.locations.rds`. 
+
+```{r}
+## Load data and show a preview
+d = readRDS('data/flight.locations.rds')
+head(d)
+
+d = d %>%
+  
+  ## Get rid of rows with missing lat/lon, or 
+  ## aircrafts that are on the ground (or below the ground lol)
+  filter(!is.na(lat), 
+         !is.na(lon),
+         alt>=0) %>%
+  
+  ## find "rough" time zones from each location
+  ## they are rough because time zone borders aren't exactly along
+  ## longitudinal lines
+  mutate(zone = case_when(             lon >= -86  ~ 'EDT', 
+                          lon<= -86  & lon >= -102 ~ 'CDT',
+                          lon<= -102 & lon >= -114 ~ 'MDT/PDT', 
+                          lon<= -114               ~ 'MDT/PDT', 
+                          TRUE ~ 'other')) %>%
+  
+  ## For each hex/flight combo, find the diff in time between observations.
+  ## When diff is more than 10, we'll want to create a new primary key, since 
+  ## this indicates a different flight. 
+  ## (Right now a flight could land in the morning and a flight with the same flight 
+  ## number could take-off at night. Both can have the same `hex` and `flight`).
+  ## So find diff, 
+  ## then create an indicator for diff>10, 
+  ## then cumsum diff within each hex/flight,
+  ## then paste that number hex and flight for the new key
+  group_by(hex, flight) %>%
+  mutate(zone = first(zone), 
+         mins = hr*60+min,
+         diff = c(0,diff(mins)), 
+         diff10 = ifelse(diff>10, 1, 0), 
+         cumul.diff = cumsum(diff10),
+         key = paste0(hex, '.', flight, '.', cumul.diff))
+  
+## count the rows of each flight
+## only keep flights with more than 4 rows.
+d = d %>%
+  group_by(key) %>%
+  mutate(rows = n()) %>%
+  filter(rows>=4)
+
+```
+
+## Data exploration
+
+
+Leaflet - interactive map
+
+```{r}
+dg = d %>%
+  filter(time == '00:00') 
+dg
+
+## add a label with speed, altitude, time, flight
+dg = dg %>% 
+  mutate(label = paste0('Speed: ', speed, 
+                        '<br>Altitude: ', alt, 
+                        '<br>Time: ', time, 
+                        '<br><b>Flight: ', flight, '</b>', 
+                        '<br>Latitude: ' , lat, 
+                        '<br>Longitude: ', lon))
+head(dg,2)
+```
+
+```{r}
+g <- leaflet(dg) %>%
+  addTiles() %>%
+  addCircleMarkers(lng = ~lon, 
+                   lat = ~lat,
+                   color = ~zone,
+                   radius = 3, 
+                   opacity = 0.5, 
+                   label = ~label %>% lapply(HTML),
+                   popup = ~label) 
+g
+```
+
+Leaflet with some different settings, and everything well-commented. 
+
+```{r}
+leaflet(data = dg, 
+        height = 480, 
+        width = 800) %>% 
+  addTiles() %>%                        ## add the background map
+  addCircleMarkers(lng = ~lon,          ## note that you need a ~ when refering
+                   lat = ~lat,          ## to columns in leaflet
+                   radius = 5,          ## size of the circle markers
+                   color = pubtextgray, 
+                   stroke = FALSE,      ## remove the border of the circle
+                   fillOpacity = 0.5,
+                   
+                   ## show a label when you click. 
+                   ## it interprets the text in the `label` column as HTML code
+                   ## So you can provide any HTML formatting you'd like
+                   ## Here, we didn't do anything other than include line breaks 
+                   ## as discussed above. 
+                   popup = ~label,       
+                   
+                   ## show a label when you hover. For some reason, 
+                   ## `label` works differently than `popup`
+                   ## it won't treat the text as HTML code without 
+                   ## without the lapply(HTML), which applies the HTML() 
+                   ## function to each entry in the column
+                   label = ~label %>% lapply(HTML)
+                   ) %>% 
+  
+  ## Set the view to the US by giving the coordinates of the 
+  ## center and an appropriate zoom level
+  setView(lng = -95,  
+          lat = 40, 
+          zoom = 4)
+```
+
+
+ggplot
+
+```{r}
+ggplot(dg, 
+       aes(x = lon, 
+           y = lat)) + 
+  borders('world') +
+  geom_point()
+
+```
+
+With more settings/formatting. 
+
+```{r}
+title = "Aircraft locations at Midnight GMT"
+g = ggplot(dg, 
+           aes(x = lon, 
+               y = lat))+
+  borders('world', 
+          colour = publightgray)+
+  geom_point(size = 1, 
+             alpha = .3)+
+  labs(title = title)
+
+g %>% 
+  pub(type = 'map')
+```
+
+Just the US
+
+```{r}
+## restrict lat/lon, and change borders to 'usa' below
+dg = dg %>%
+  filter(lat >=  22,  
+         lat <=  51,
+         lon <= -62,
+         lon >= -130)
+
+title = "Aircraft locations at Midnight GMT"
+g = ggplot(dg, 
+           aes(x = lon, 
+               y = lat))+
+  borders('usa',                    
+          colour = publightgray)+
+  geom_point(size = 1, 
+             alpha = .3)+
+  labs(title = title)
+
+g %>% 
+  pub(type = 'map')
+
+```
+
+## Flight paths
+Create a map of the US showing flight paths of all aircraft throughout the day. Color the lines by `zone`. Check the help files for `geom_line` and `geom_path` to determine which will be the most appropriate. Tip: adding a lot of transparency to the lines will help.
+
+```{r}
+## All hours, just the US
+dg = d %>% 
+  filter(hr %in% 0:1, 
+         lat >=  22,  
+         lat <=  51,
+         lon <= -62,
+         lon >= -130)
+
+title = 'Aircraft flight paths'
+g = ggplot(dg, 
+           aes(x = lon, 
+               y = lat,
+               group = key, 
+               color = zone)) +
+  borders('usa',                    
+          colour = publightgray) +
+  geom_path(alpha = 0.01, 
+            show.legend = F) +
+  labs(title = title)
+
+g %>% 
+  pub(type = 'map')
+
+```
+
+
+## Animation
+
+We'll create an animation showing paths of all aircraft in the US over the 24-hour period. Note that it may take several minutes to create the full animation, and you may or may not see a progress bar that gives estimated time. Before making the full animation, we'll do this:
+
+- Try this on a smaller subset of the data first, e.g. just the first hour.
+- Create a non-animated plot first with the smaller subset of data, faceting by time. This will show the first few frames in different plots and is a good way to diagnose things before animating.
+- Then we'll create an animation with this smaller subset. It won't be immediate, but it shouldn't take *that* long.
+- If all that looks good, we'll try the full animation. When trying to create the full animation, have something else to work on while the code is running, it might take like 10+ minutes. Note that you can have more than one session of R Studio running at the same time. For example, go to Session -\> New Session.
+
+```{r}
+dg = d %>%
+  filter(hr %in% 0:1, 
+         lat > 20, 
+         lat < 55, 
+         lon > -130, 
+         lon < -60)
+
+title = "Flight Locations at {closest_state} GMT" 
+g = ggplot(dg, 
+           aes(x = lon, 
+               y = lat, 
+               color = zone))+
+  borders('state', 
+          colour = publightgray)+
+  geom_point(size = 1, 
+             alpha = 0.1, 
+             show.legend = F)+
+  labs(title = title)
+
+g %>% 
+  pub(type = 'map')
+```
+
+Facet by time so we can see to see some individual frames. 
+
+```{r}
+g1 = g + 
+  facet_wrap(~time) 
+
+g1 %>%
+  pub(type = 'map')
+```
+
+Now animate using the function `transition_states`, and use `time` that says what frame the observation should be in. 
+
+```{r}
+gg = g %>%
+  pub(type = 'map') + 
+  transition_states(states = time, 
+                    transition_length = 1, 
+                    state_length = 0, 
+                    wrap = F)
+gg
+```
+
+Paths look weird! That's because we didn't tell `gganimate` how to keep track of points from one frame to another. We do that by specifying the unique identifier as the `group`. This is the same `ggplot` code from above, but with `group=key`.
+
+```{r}
+g = ggplot(dg, 
+           aes(x = lon, 
+               y = lat, 
+               color = zone, 
+               group = key))+
+  borders('state', 
+          colour = publightgray)+
+  geom_point(size = 1, 
+             alpha = 0.1, 
+             show.legend = F)+
+  labs(title = title)
+
+gg = g %>% 
+  pub(type = 'map') + 
+  transition_states(states = time, 
+                    transition_length = 1, 
+                    state_length = 0, 
+                    wrap = F)
+gg
+
+```
+
+Better, but we might want to do some stuff like change the dimensions, change the speed of the animation, number of frames, frames per second, etc. That can be done with `animate`. See full code below. Note that this uses the full data. The code to generate the full animation is current commented out so you don't accidentally run it. 
+
+```{r}
+dg = d %>%
+  filter(lat > 20, 
+         lat < 55, 
+         lon > -130, 
+         lon < -60)
+
+g = ggplot(dg, 
+           aes(x = lon, 
+               y = lat, 
+               group = key, 
+               color = zone)) +
+  borders('usa', 
+          colour = pubtextgray) +
+  geom_point(size = 1.5, 
+             alpha = .5, 
+             show.legend = F) +
+  labs(title = title)
+
+## animation transitions
+gg = g %>%
+  pub(type = 'map') +
+  transition_states(states = time,
+                    transition_length = 1,
+                    state_length=0,
+                    wrap=F) +
+  
+  ease_aes('linear') + ## move at linear speed and path to next state
+  enter_fade() +       ## points fade in when they first appear in the
+  exit_fade()          ## data (take off, or come from off screen), 
+                       ## and fade out when they leave (land, or leave screen)
+
+# ## other animation settings
+# a1 = animate(gg, 
+#         width   = 720, 
+#         height  = 720/1.5, 
+#         fps     = 24, 
+#         nframes = 24*10*4, 
+#         start_pause = 5, 
+#         end_pause   = 5)
+# a1
+# 
+# ## save animation
+# anim_save(a1, filename = 'img/flight-locations.gif')
+```
+![](img/flight-locations.gif)
+
