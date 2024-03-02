@@ -15,6 +15,7 @@ head(d,2)
 ```
 There is one row per property, each with one single family home, and the columns have the following meanings:
 
+- `pid`: a unique identifier for the property, Property ID
 - `value`: the assessed value of the property
 - `year`: the year the house was built
 - `land`: the square feet of the land area of the property
@@ -49,9 +50,187 @@ Properties with more than one building, and properties with something other than
 
 ## Data exploration
 
-In-class exercise. See Ed Discussions
+In-class exercise. 
+
+- Create a visualization (or visualizations) that will help you learn something about the data, with the focus being on information that will help you build a model for property value. 
+- In Ed Discussions, paste your code formatted as code, and paste a screen shot of the visualization. 
+
+## log(value) vs beds
 
 ```{r}
+ggplot(d, 
+       aes(x = beds, 
+           y = log(value))) + 
+  geom_jitter(alpha = 0.3) + 
+  geom_smooth(color = pubblue) +
+  geom_smooth(method = 'lm', 
+              color = pubred)
+  
+```
+Doesn't look linear!  Here is log(value) vs Living area.
+
+```{r}
+ggplot(d, 
+       aes(x = log(living), 
+           y = log(value))) + 
+  geom_jitter(alpha = 0.3) + 
+  geom_smooth(color = pubblue) +
+  geom_smooth(method = 'lm', 
+              color = pubred)
 
 ```
 
+Instead of making a separate scatter plot for each predictor, we can use `pivot_longer` and `facet_wrap` to quickly make a scatter plot (or other type of plot) of each predictor and `log(value)`. First we'll select some numeric columns to plot with `log(value)`.
+
+```{r}
+dg1 = d %>%
+  filter(style != 'Mobile Home') %>%
+  mutate(log.value = log(value)) %>%
+  select(pid, 
+         log.value, land, living, beds, baths, halfbaths,
+         good, saleprice, 
+         miles_to_coastline, miles_to_highway, 
+         miles_to_school,    miles_to_hospital) %>%
+  pivot_longer(cols = -c(log.value, pid))
+head(dg1,2)
+
+```
+
+Now that the variable names are in the column `name`, we can facet by `name` to make a different scatter plot for each predictor. The vertical axis is `log(value)` and the horizontal axis is the predictor, the values of which are in the column `value`.
+
+```{r}
+ggplot(dg1, 
+       aes(x = value, 
+           y = log.value)) + 
+  geom_jitter(size = 1, 
+              width = 0.4) + 
+  facet_wrap(~name, 
+             scales = 'free_x')
+
+```
+
+From this we can investigate if there might be a linear relationship between `log(value)` and each predictor, if it looks like we need to transform any variables, or if there are other issues to be aware of. Now let's select some categorical predictors and do the same thing. 
+
+```{r}
+## Some character columns
+dg2 = d %>%
+  filter(style != 'Mobile Home') %>%
+  mutate(log.value = log(value)) %>%
+  select(pid, log.value, 
+         style, grade, roof, 
+         bath_style, kitchen_style) %>%
+  pivot_longer(cols = -c(log.value, pid))
+head(dg2,2)
+
+```
+
+```{r}
+ggplot(dg2, 
+       aes(x = value, 
+           y = log.value)) + 
+  geom_jitter(size = 1, 
+              width = 0.4) + 
+  facet_wrap(~name, 
+             scales = 'free_x')
+
+```
+
+To make it easier to read the categories, we can switch x and y and change `free_x` to `free_y`. 
+
+
+```{r}
+ggplot(dg2, 
+       aes(y = value, 
+           x = log.value)) + 
+  geom_jitter(size = 1, 
+              width = 0.4) + 
+  facet_wrap(~name, 
+             scales = 'free_y') 
+```
+
+We can also quickly determine correlations between `log(value)` and each predictor. 
+
+```{r}
+dg1 %>%
+  group_by(name) %>%
+  summarise(cor = cor(value, 
+                      log.value, 
+                      use = 'pairwise.complete.obs'))
+```
+
+Check 
+
+```{r}
+dg1 %>% 
+  filter(name=='baths') %>% 
+  select(-name) %>% 
+  cor(use = 'pairwise.complete.obs')
+```
+
+We can also find the correlation matrix for predictors and `log(value)`.
+
+```{r}
+corr = dg1 %>% 
+  pivot_wider() %>%
+  select(-pid) %>%
+  cor(use = 'pairwise.complete.obs') %>% 
+  round(3)
+corr
+```
+
+Visualize the correlations more easily, we can use `corrplot`. 
+
+```{R}
+library(corrplot)
+corrplot(corr)
+```
+
+Let's change some of the defaults, like the ordering of the variables, and plot something different in the lower and upper triangles. 
+
+```{r fig.height = 5, fig.width = 5}
+diag(corr) = 0 ## remove the 1's on the diagonal
+
+## Upper triangle
+corrplot(corr, 
+         order  = 'FPC', 
+         diag   = T, 
+         type   = 'upper', 
+         tl.pos = 'tp')
+
+## Lower triangle
+corrplot(corr, 
+         method ='number', 
+         order  = 'FPC', 
+         diag   = F, 
+         type   = 'lower', 
+         add    = T, ## need this for the second plot
+         tl.pos = 'n',  
+         cl.pos = 'n', 
+         number.cex = .75)
+
+
+```
+
+We can quickly plot scatter plots for pairs of predictors using `ggpairs` from the `GGally` package.
+
+```{r}
+library(GGally)
+dg = dg1 %>%
+  pivot_wider() %>% 
+  select(-pid) %>%
+  mutate(log.living = log(living))
+
+
+g = ggpairs(dg, 
+            columns = c('log.value', 'log.living', 'beds'),
+            diag    = list(continuous = pub.density)) +
+  theme_pub(type = 'pairs')
+print(g)
+g = ggpairs(dg, 
+            columns = c('log.value', 'log.living', 'beds')) 
+print(g)
+```
+
+## What to do about non-normality? 
+
+We 
