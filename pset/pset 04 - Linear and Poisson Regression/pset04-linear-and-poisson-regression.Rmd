@@ -171,7 +171,7 @@ saveRDS(df, file='data/flight.locations.rds')
 
 #### 3. Different codings for categorical variables
 
-Suppose you are predicting `log(value)` in our `brandford.csv` data set. Suppose you build one model with `log(living)`, `grade`, and `style` as predictors, and for a second model you use `relevel` to choose `Mobile Home` as the reference level for the `style` variable, instead of using the default reference `Bungalow` that `lm` uses in the first model. Show that 
+Suppose you are predicting `log(value)` in our `branford.csv` data set. Suppose you build one model with `log(living)`, `grade`, and `style` as predictors, and for a second model you use `relevel` to choose `Mobile Home` as the reference level for the `style` variable, instead of using the default reference `Bungalow` that `lm` uses in the first model. Show that 
 
 - the predictions obtained from the two models are the same
 - the CIs and PIs are the same
