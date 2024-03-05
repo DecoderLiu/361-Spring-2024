@@ -1,5 +1,5 @@
 ---
-title: "PSET 04 - Linear regression, Bootstrapping"
+title: "PSET 04 - Linear regression, Poisson Regression"
 author: "S&DS 361"
 date: "2024-02-21"
 output:
@@ -18,7 +18,7 @@ library(tidyverse)
 
 The R script `get.flight.location.data.r` contains code that scrapes flight location data from ADSBexchange.com. It is pasted below. The script contains no comments (except at the very top of the script). Please add comments to the code below everywhere there is a `##` explaining what that chunk of code does. 
 
-You don't need to write paragraphs, just a line or two for each one. Many of the functions below will look familiar, but some may be new to you and will require you to check R help or the interwebs. Feel free to run the code (by, for example, copying it into it's own R script and running line by line) to check what the outputs are before writing your comment. 
+You don't need to write paragraphs, just a line or two for each one. Many of the functions below will look familiar, but some may be new to you and will require you to check R help or the interwebs. Feel free to run the code (by, for example, copying it into it's own R script and running line by line) to check what the outputs are before writing your comment. You'll need to create a folder called `data/flight-locations` in order for the last line of the code to run. I suggest changing the for loop to say `j in 1:2` instead of `j in 1:nrow(du)` so that you can test the code without having to wait for all the data to download.
 
 
 ```
@@ -171,7 +171,7 @@ saveRDS(df, file='data/flight.locations.rds')
 
 #### 3. Different codings for categorical variables
 
-Suppose you are predicting `log(value)` in our `brandford.csv` data set. Suppose you build one model with `log(living)`, `grade`, and `style` as predictors, and for a second model you use `relevel` to choose `Mobile Home` as the reference level for the `style` variable, instead of using the default reference `Bungalow` that `lm` uses in the first model. Show that 
+Suppose you are predicting `log(value)` in our `branford.csv` data set. Suppose you build one model with `log(living)`, `grade`, and `style` as predictors, and for a second model you use `relevel` to choose `Mobile Home` as the reference level for the `style` variable, instead of using the default reference `Bungalow` that `lm` uses in the first model. Show that 
 
 - the predictions obtained from the two models are the same
 - the CIs and PIs are the same
@@ -235,7 +235,7 @@ $$ \textrm{Safety Score} = 112.29263237 - 14.77121589 \cdot \textrm{PCF} $$
 
 
 
-#### 8. What is the interpretation of the term $1.10385444^{\textrm{Hard Braking}}$ in the PCF formula? 
+#### 8. What is the interpretation of the term $1.16460827^{\textrm{Hard Braking}}$ in the PCF formula? 
 
 
 
@@ -266,6 +266,6 @@ dc = dc %>%
 #### 9. Suppose we want to quickly determine if the number of Level 2 charging stations in a census track looks roughly Poisson. (For this problem, consider all the data at once, not just the data for smaller subsets of $x$.) Let's compare the data to a Poisson distribution with the same mean as the data.  Plot the actual distribution of the data along with this Poisson distribution in a way that allows for a quick comparison of the two. Does the number pairs of Level 2 charging stations in a census tract look Poisson distributed?
 
 
-#### 10. Fit a Poisson Regression model for predicting Level 2 charging stations in a census tract using `house.value` and `age`. How does this model compare to the null model? Considering your observations in #9, what outputs of this model are reasonable/unreasonable? 
+#### 10. Fit a Poisson Regression model for predicting Level 2 charging stations in a census tract using `house.value` and `age`. How does this model compare to the null model (the model with only an intercept term)? Considering your observations in #9, what outputs of this model are reasonable/unreasonable? 
 
 
