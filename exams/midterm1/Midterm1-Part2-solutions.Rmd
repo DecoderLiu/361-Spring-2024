@@ -1,0 +1,109 @@
+---
+title: "Midterm 1, Part 2 - solutions"
+author: "S&DS 361"
+date: "2024-02-19"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(pubtheme)
+```
+
+```{r}
+d = read.csv('data/branford.csv')
+d = d %>%
+  select(pid, value, land, living, beds, baths, 
+         good, style, grade, ac, miles_to_coastline)
+```
+
+```{r}
+num.cols = c('land', 'living', 'beds', 'baths', 
+             'good', 'miles_to_coastline')
+
+char.cols = c( 'style', 'grade', 'ac')
+
+dd1 = d %>% 
+  mutate(log.value = log(value)) %>%
+  select(pid, log.value, style, 
+         all_of(num.cols)) %>% 
+  pivot_longer(cols = -c(pid, log.value, style)) 
+
+dd2 = d %>%
+  mutate(log.value = log(value)) %>%
+  select(pid, log.value, 
+         all_of(char.cols)) %>%
+  pivot_longer(cols = -c(pid, log.value))
+
+```
+
+```{r}
+ggplot(dd1 %>% 
+         filter(style != 'Mobile Home'), 
+       aes(x = value, 
+           y = log.value)) + 
+  geom_jitter(size = 1) +
+  geom_smooth(linewidth = 1, 
+              color = pubred) + 
+  facet_wrap(~name, 
+             scales = 'free')
+```
+
+Observations from the above plot (you could also use observations we made in class): 
+
+- `beds`, `baths`, `living`, `miles_to_coastline` don't appear to have a linear relationship. 
+- It's unclear if land has a linear relationship. But that should be log transformed given the distribution is so right-skewed.  Then we can investigate if it's linear.
+- `living` should be log transformed (from figure about or pset03)
+- `good` may or may not be linear, though it's decently linear except for the very small values
+
+Let's transform our data
+
+```{r}
+d = d %>%
+  mutate(## Group some categories with low observations together
+         beds  = ifelse(beds  > 6, 6, beds),
+         baths = ifelse(baths > 4, 4, baths),
+         grade = ifelse(grade == 'D', 'C -', grade),
+         
+         ## convert some predictors to categorical
+         beds  = as.character(beds), 
+         baths = as.character(baths), 
+         
+         ## releveling to make results more interpretable
+         ac    = relevel(factor(ac)   , 'None'), 
+         style = relevel(factor(style), 'Mobile Home'))
+```
+
+We'll use log transforms for `living` and `miles_to_coastline`, like we did on pset03. 
+
+
+```{r}
+lm1 = lm(log(value) ~ log(land+1) + log(living) + 
+           beds + baths + good + 
+           style + grade + ac + 
+           log(miles_to_coastline), 
+         data = d)
+summary(lm1)
+```
+
+All these variables appear significant. From pset03 we saw that many of these increase Adj R^2. The others do as well. They all have the expected sign. 
+
+b. I did some of this above.  Let's plot the residuals. 
+
+```{r}
+plot(lm1)
+```
+
+```{r}
+d$lm1 = predict(lm1, newdata=d)
+d$res = log(d$value) - d$lm1
+ggplot(d, 
+       aes(x = res)) + 
+  geom_histogram() 
+```
+
+Residuals are close to normal, but there's a big right tail (can also be seen in the `plot(lm1)` output above). Other plots looks decent-ish, no other assumptions violated in a major way. 
+
+
+
