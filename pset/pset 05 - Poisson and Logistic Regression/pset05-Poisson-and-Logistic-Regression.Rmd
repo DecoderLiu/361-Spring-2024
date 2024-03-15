@@ -144,7 +144,7 @@ head(ev,2)
 
 ### 6. Data exploration
 
-Perform some data exploration and visualization that helps you learn about the data, with a focus on prediction `landcover`. Discuss any notable observations. 
+Perform some data exploration and visualization that helps you learn about the data, with a focus on predicting `l2`. Discuss any notable observations. 
 
 
 
@@ -188,7 +188,7 @@ one row per location, and each row has `ID`, mean `NDVI`, mean `B7`, and `landco
 
 ### 8. Data exploration
 
-Perform some data exploration and visualization that helps you learn about the data, with a focus on prediction `landcover`. Discuss any notable observations. Which `landcover` types will be harder/easier to classify based on what you learned?
+Perform some data exploration and visualization that helps you learn about the data, with a focus on predicting `landcover`. Discuss any notable observations. Which `landcover` types will be harder/easier to classify based on what you learned?
 
 
 
