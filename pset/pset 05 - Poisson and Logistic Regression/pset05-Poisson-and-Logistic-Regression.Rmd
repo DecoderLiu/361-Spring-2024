@@ -1,0 +1,248 @@
+---
+title: "PSET 05 - Poisson and Logistic Regression"
+author: "S&DS 361"
+date: "Due 2024-03-28"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, 
+                      warning = F, 
+                      message = F)
+library(nnet)
+library(pROC)
+library(tidyverse)
+library(pubtheme)
+```
+
+
+
+## Shot success in hockey
+
+In this part, we'll study NHL shots data.  In particular, we'll examine what kinds of shot attempts are more likely to be goals.
+
+```{r}
+d = readRDS('data/nhl.shots.rds')
+head(d,2)
+```
+
+Let's focus only on 5-on-5 situations where both goalies are on the ice, let's remove a few shots missing location information, and let's remove blocked shots.
+
+```{r}
+d = d %>% 
+  filter(str == '5v5' &  ## 5-on-5 only
+           !is.na(xcoord) &  ## remove shots with missing coordinates
+           event != 'BLOCK')   ## remove blocks
+```
+
+We'll focus on shot location (`distance` and `angle`) as predictors, and `goal` as the outcome:
+
+- `goal` = 1 if the shot attempt was a goal, 0 if it missed the net or was saved by the goalie.
+- `dist` = the distance of the shot attempt from the net
+- `angle` = the angle from the center of the ice that the shot was taken from (0 is center of the ice, -90 is left side along the red line, 90 is right side along the red line)
+- `abs.angle` = the absolute value of the `angle`   
+
+We first make a plot of the data, getting shot locations from `xcoord` and `ycoord`. We color the dots by `goal`.  
+
+Note that for each period, the coordinates for one team are flipped so that both teams are shooting in the same direction (to the right). So we'll see far more shots on the right side of the rink. 
+
+```{r}
+g = ggplot(d, 
+           aes(x = xcoord)) +
+  geom_histogram(color = pubbackgray, 
+                 binwidth = 5)
+
+g %>% 
+  pub(type = 'hist')
+```
+
+
+```{r fig.width=7, fig.height=4}
+d = d %>%
+  mutate(Goal = as.character(goal))
+
+title = "Locations of shots and goals" 
+g = ggplot(d, 
+           aes(x = xcoord, 
+               y = ycoord, 
+               color = Goal))+
+  geom_jitter(alpha = 0.3, 
+              size  = 0.75, 
+              show.legend = F)+
+  labs(title = title) +
+  scale_color_manual(values = c(publightgray, pubred))
+  
+
+g %>% 
+  pub(type = 'map')
+
+```
+
+The goal is on the right, and we probably don't care about the shots that are coming from outside the offensive zone.  So let's remove those. 
+
+Also, it would look nicer if this were plotted on a picture of a rink.  So first we'll load a picture of the rink and then plot points on top of it.  Because of the way the rink is oriented, we'll have to flip-flop our x and y coordinates and let `x = ycoord` and `y = -xcoord` (note the minus sign). You'll need to download the script `half.rink.r` from Canvas.
+
+```{r fig.width=4, fig.height=4}
+d = d %>% 
+  filter(xcoord >= 24, 
+         xcoord <= 100)
+
+source('R/half.rink.r')
+
+g = half.rink + 
+  geom_jitter(data = d, 
+              aes(x =  ycoord, 
+                  y = -xcoord, 
+                  color = Goal), 
+              alpha = 0.3, 
+              size  = 0.75, 
+              show.legend = F) +
+  labs(title = title) +
+  scale_color_manual(values = c(publightgray, pubred)) 
+
+g %>% 
+  pub(type = 'map', 
+      ylim = c(-100, -24))
+```
+
+We see mostly gray dots (shot attempts that weren't goals), but there are red dots (goals) too, and there are more of them closer to the goal (smaller values of `dist`) and very few far away from the goal (higher values of `dist`, near the blue line). (The goal is the black rectangle at the bottom, below the blue half circle.) There are also more red dots in the center of the ice (`angle` near 0) and fewer on the left and right sides (angles near -90 and 90, or `abs.angle` near 90). This suggests `dist`, `angle`, `abs.angle` are related to the probability that a shot attempt will be a `goal`. The data are not very well-separated, so we don't expect our error rates to be that low. But hopefully we can build a useful model.  
+
+#### 1. Observed proportion of goals by `dist`
+
+Find the observed proportion of goals for different subsets of `dist` and plot the result. Do these values appear to follow a logistic curve? Does the curve you found make sense given the overall proportion of goals in the data?
+
+
+#### 2. Observed proportion of goals by `angle` and `abs.angle`. 
+
+Repeat the above question for `angle` and  `abs.angle`. Which one should you try in the model? Why? 
+
+
+#### 3. Build three logistic regression models that predict `goal` using the following predictors. Which model is "best"?  Why?
+
+- Model 1: `dist` 
+- Model 2: `abs.angle`
+- Model 3: `dist` and `abs.angle`
+
+
+
+#### 4. Find the accuracy and error rate of each model, meaning, how often it correctly or incorrectly predicts the outcome. Also compute the AUC and log loss for all three models.  What do you notice? Which model would you use to predict the probability that a new shot will be a goal? 
+
+
+
+#### 5. How are the accuracy, error rates, and proportion of 1's related?  Why are they related that way? How could you change your method of determining the predicted classes and obtain a different result?
+
+
+## EV Stations
+
+The following data set is census and electric vehicle charging stations data set from earlier in the course. It contains one row per census tract (`GEOID`), several columns with census information along with columns that have the number of Level 2 (`lev2`) and Level 3 (`lev3`) electric vehicle charging stations for each census tract. 
+
+```{r}
+ev = readRDS('data/tracts.and.census.with.EV.stations.rds')
+ev = ev@data
+head(ev,2)
+```
+
+### 6. Data exploration
+
+Perform some data exploration and visualization that helps you learn about the data, with a focus on predicting `l2`. Discuss any notable observations. 
+
+
+
+### 7. Estimate the probability of at least one `lev2` station
+
+Estimate the probability that a census tract has at least one Level 2 charging station. Justify the information you use in the model. Briefly discuss the results and any takeaways.
+
+
+## Landcover classification
+
+For this part our goal is to use `NDVI` and `B7` to classify each location as `natforest`, `cropland`, `orchard`, or `builtup`.  Note that `landcover` is a categorical outcome with 4 categories, which isn't something we focused on in class. But not to worry, we'll be doing some of the work for you. 
+
+First, here is some data prep to help you get started. 
+
+```{r}
+load('data/labeled_points.Rdata')
+
+## Create a data set that is one row per location
+## with mean(NDVI), mean(B7), and landcover type for each location
+labeled = labeled %>% 
+  dplyr::select(ID, landcover)
+
+d = labeled_train %>%
+  left_join(labeled, 
+            by = 'ID') %>%
+  group_by(ID) %>%
+  summarise(NDVI = mean(NDVI, na.rm=T), 
+            B7   = mean(B7  , na.rm=T),
+            landcover = unique(landcover)) %>%
+  as.data.frame()
+head(d)
+```
+
+We see now that there are 400 rows, 
+
+```{r}
+nrow(d)
+```
+
+one row per location, and each row has `ID`, mean `NDVI`, mean `B7`, and `landcover` type for each location.  
+
+### 8. Data exploration
+
+Perform some data exploration and visualization that helps you learn about the data, with a focus on predicting `landcover`. Discuss any notable observations. Which `landcover` types will be harder/easier to classify based on what you learned?
+
+
+
+### 9. Modeling 
+
+One approach to this classification problem is to use multinomial logistic regression.  This is a generalization of logistic regression for when there are more than 2 categories. For each observation, instead of getting an estimated probability of success (or, 1, or "yes", etc.), we get estimated probabilities for all of the categories. 
+
+We use `NDVI`, `B7`, and an interaction term as predictors, and `landcover` as the outcome in the model below.
+
+```{r}
+library(nnet) ## install.packages("nnet") if you don't have the package
+mn1 = multinom(landcover ~ NDVI + B7 + B7:NDVI, 
+               data = d)
+#summary(mn1) ## in case you are curious, but not necessary
+```
+
+We can add predicted probabilities and the predicted class to our data frame using `predict` as usual. 
+
+```{r}
+mn1.landcover.probs = c('mn1.builtup', 
+                        'mn1.cropland', 
+                        'mn1.natforest', 
+                        'mn1.orchard')
+
+d[,mn1.landcover.probs] = predict(mn1, newdata=d, type = 'probs') %>% round(5)
+d$pred.landcover        = predict(mn1, newdata=d, type = 'class') ## predicted class
+d %>% head()
+```
+We now have one row per ID, and probability of each landcover type in the `mn1.xxxxxx` columns. 
+
+Another approach is to build 4 logistic regression models, one for each `landcover` type:
+
+1. outcome: 1 = `builtup`  , 0 = not `builtup`.   Predictors: `NDVI`, `B7`, and an interaction 
+2. outcome: 1 = `cropland` , 0 = not `cropland`.  Predictors: `NDVI`, `B7`, and an interaction 
+3. outcome: 1 = `natforest`, 0 = not `natforest`. Predictors: `NDVI`, `B7`, and an interaction 
+4. outcome: 1 = `orchard`  , 0 = not `orchard`.   Predictors: `NDVI`, `B7`, and an interaction 
+
+Build these 4 logistic regression models, find the predicted probabilities for each class, and show that the estimated probabilities are similar to those from our multinomial logistic regression model above.  Also, find the sum of the estimated probabilities from the multinomial logistic regression model, and the sum of estimated probabilities from the 4 logistic regression models. Based on these results, what is one downside of using 4 logistic regression models instead of multinomial logistic regression?
+
+
+
+## Simulation
+
+### 10. Repeat #4 from PSET4, but for Poisson Regression. 
+
+In particular, suppose $y \sim Pois(\lambda)$ and $\lambda = exp(1 + 2x).$ Simulate some data by doing the following: 
+
+a. Generate a random sample of 10,000 $x$ values on $[0,1]$.
+b. Generate 10,000 $\lambda$s using $\lambda = e^{1 + 2x}.$
+c. Generate a random sample of 10,000 $y$ values using $y \sim Pois(\lambda).$ 
+
+Then, 
+
+d. Fit a Poisson regression model to the data and report the estimated coefficients. Are the estimates what you would expect? Why or why not? 
+
+e. Plot a scatter plot of $y$ versus $x$, and add a smooth curve to the plot. Does this visualization look as you would have expected? Do the Poisson regression assumptions appear to hold? Why or why not? 
+
