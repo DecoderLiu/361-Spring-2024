@@ -144,7 +144,7 @@ head(ev,2)
 
 ### 6. Data exploration
 
-Perform some data exploration and visualization that helps you learn about the data, with a focus on predicting `l2`. Discuss any notable observations. 
+Perform some data exploration and visualization that helps you learn about the data, with a focus on predicting the probability that a census tract has at least one Level 2 charging station. Discuss any notable observations. 
 
 
 
