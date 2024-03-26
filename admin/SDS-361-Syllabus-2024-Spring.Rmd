@@ -60,7 +60,7 @@ Here are some more details about specific topics you'll want to have experience 
 
 **Computing.** The most important thing is the installation of the newest versions of R and RStudio IDE. You will also want LATEX (MacTeX on the Mac and MikTeX on Windows). For Windows, make sure you get the complete distribution of MikTeX the basic version will not work. The `tinytex` package is another option if you have issues with other versions of LaTeX. 
 
-Please also install the packages listed in the first assignment. We will use those throughout the course. We may end up needing other packages too, which we'll install on the fly. But we will definitely use the packages at that link, so take the time to download them now. 
+Please also install/update the packages listed in the first assignment. We will use those throughout the course. We may end up needing other packages too, which we'll install on the fly. But we will definitely use the packages at that link, so take the time to download them now. 
 
 **Books.**
 
@@ -134,7 +134,13 @@ Class time will be a mix of live-coding in R, in-class small group activities, i
 
 **Office hours.** You are expected to attempt problems before seeking help in office hours. When you ask for help, clearly state what you have attempted, where you got stuck, and what specific question you have. 
 
-**Ed Discussion and GitHub Issues.** You will be able to ask questions on Ed Discussion and GitHub issues.  The same guidelines as office hours apply here: You are expected to attempt problems before seeking help, and when you ask for help, clearly state what you have attempted, where you got stuck, and what specific question you have. Use minimal reproducible examples when possible. 
+**Ed Discussion and GitHub Issues and Pull Requests.** You will be able to ask questions on Ed Discussion and GitHub issues.  The same guidelines as office hours apply here: You are expected to attempt problems before seeking help, and when you ask for help, clearly state what you have attempted, where you got stuck, and what specific question you have. Use minimal reproducible examples when possible. 
+
+If you notice a typo in an assignment, you can create a pull-request with the correction. If you need clarification on an assignment, instead of asking on Gradescope, you may also  ask a question using an issue. Note that you can refer to a file and line number within the issue by doing this: 
+
+- Go to the file, and hover over the line. 
+- Click the 3 dots on the left
+- Choose Reference in New Issue
 
 **Announcements.** I will make announcements on Canvas throughout the semester. You are expected to read these announcements, so I suggest that you make sure that Canvas notifications are turned on for announcements in this course. If you receive Canvas announcements in email, the formatting may be bad. If so, click the link to view announcements in the web browser. 
 
