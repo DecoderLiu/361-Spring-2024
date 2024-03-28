@@ -373,7 +373,7 @@ ggsave(filename=paste0("img/", gsub("%", " Perc", title), ".jpg"),
 
 # `veg` and mean NDVI
 
-## Quick linear fit using `geom_smooth`
+### Quick linear fit using `geom_smooth`
 
 Linear regression would not be appropriate for this data. Many of the linear regression assumptions are not satisfied (Which ones?). Plus if we fit a linear regression model, we get predictions greater than 1 and less than 0.  
 
@@ -386,7 +386,7 @@ g
 
 Lol. Doesn't seem reasonable, for many reasons, including getting many predictions that are greater than 1 . 
 
-## Observed proportion of 1s for different subsets of the predictor
+### Observed proportion of 1s for different subsets of the predictor
 
 Let's look at the proportion of `veg` for different subsets of `NDVI`. 
 
@@ -461,7 +461,7 @@ g %>%
 
 A straight line doesn't look like a good fit even inside the bounds of `veg=0` and `veg=1`. The points look like they form an S shaped curve, not a line. 
 
-## Observed Proportion of 1s for different subsets of other  predictors
+### Observed Proportion of 1s for different subsets of other  predictors
 
 Instead of looking at only `NDVI`, let's look at all of the band values and indexes.  We could make a scatter plot for each stat like we did for `NDVI` above, but it will be easier to reorganize the data and use `facet_wrap` as we have done before. So we'll we use the long format of the data `ds` from above. 
 
@@ -545,10 +545,10 @@ As we would expect, there is a positive relationship between `NDVI` and `veg` bu
 
 We also see that the S-shaped curve appears a lot, especially if you ignore the left and right extremes where there are few data points. We have sized the red dots using the number of observations in each subset, so the small red dots correspond to the subsets with very few data points. 
 
-## Logistic regression (Board)
+# Logistic regression (Board)
 
 
-## Predicting `veg` using NDVI
+# Predicting `veg` using NDVI
 
 Let's fit a logistic regression model with one predictor `NDVI` and outcome `veg`. 
 
@@ -584,7 +584,7 @@ summary(m1)
 
 Notice that the coefficient and standard errors for NDVI100 are 1/100th those of NDVI, but all other numbers in the summary are the same. Recall that rescaling a variable really only changes the units and the interpretation of the coefficients. It doesn't change the predictions or how well the model fits the data. 
 
-# Predictions
+### Predictions
 
 Let's find the predicted probabilities, and use a threshold of 0.5 to determine predicted classes. Observations with a predicted probability above 0.5 will be classified as "1" and observations with a probability 0.5 or below will be classified "0".
 
@@ -640,7 +640,7 @@ length(which(dm$class==0 & dm$veg==0))/
 ```
 We might prefer to maximize one of those, as opposed to overall accuracy, depending on the application.  
 
-## Different thresholds, ROC, AUC
+### Different thresholds, ROC, AUC
 
 The accuracy, sensitivity, and specificity all depend on the threshold of 0.5, which is often the choice for balanced data (similar number of 1s and 0s in the data), but may not always be the most appropriate choice for all applications. For example, with out data, we have three times as many 1s as 0s. 
 
@@ -686,7 +686,7 @@ dth
 
 ```
 
-## ROC curve 
+### ROC curve 
 
 The Receiver Operator Characteristic (ROC) curve shows the Sensitivity vs (1-Specificity) for different thresholds. 
 
@@ -719,7 +719,7 @@ roc.log = roc(dm$veg,
 plot(roc.log)
 ```
 
-## AUC 
+### AUC 
 
 The Area Under the ROC curve (AUC) summarizes how the classifier performs with various thresholds. AUC = 1 is perfect classification, while AUC = 0.5 (the area under the diagonal line, which corresponds to random guessing) is random guessing. In our case, our classifier is pretty good. 
 
@@ -759,7 +759,7 @@ This matches what we got using `auc` above.
 
 One downside of the aforementioned methods is that each prediction is considered either right or wrong, with no consideration given to how right or wrong the prediction was. There are several metrics that do take into account the closeness of the predictions. 
 
-## Brier Score
+### Brier Score
 
 Brier score is one way to summarize how far predicted probabilities are from actual outcomes. 
 
@@ -771,7 +771,7 @@ That looks like Mean Squared Error using probabilities and 0/1 outcomes.
 mean((dm$veg - dm$prob)^2)
 ```
 
-## Log Loss
+### Log Loss
 
 Log loss is a metric that more heavily penalizes a prediction that is far from correct. 
 
@@ -843,6 +843,60 @@ y = 0; p = 0.000001; y*log(p) + (1-y)*log(1-p)
 
 Log loss for these is very close to 0. 
 
+
+### Deviance Residuals and Deviance
+
+Pearson residual = $\frac{Y_i - \hat{p}_i}{\sqrt{\hat{p}_i(1-\hat{p}_i)}}$
+
+Deviance residual = $\textrm{sign}(Y_i - \hat{p}_i) \sqrt{2\left(Y_i \log\left(\frac{Y_i}{\hat{p}_i}\right) + (1-Y_i)\log\left(\frac{1-Y_i}{1-\hat{p}_i}\right)\right)}$
+
+Deviance residuals for some representative situations.
+
+```{r}
+df = data.frame(y = c( 0,  1,  0,  1,  0,  1), 
+                p = c(.1, .1, .9, .9, .5, .5)) %>%
+  mutate(d.res = sign(y - p)*sqrt(2*(y*log(y/p + 1e-15) + (1-y)*log((1-y)/(1-p) + 1e-15))))
+df
+```
+
+Here are deviance residuals and deviance for our model. 
+
+```{r}
+dm = dm %>% 
+  mutate(p.res = (veg - prob)/sqrt(prob*(1-prob)), 
+         d.res = sign(veg - prob)*sqrt(2*(
+                veg *log(   veg/    prob  + 1e-15) + 
+             (1-veg)*log((1-veg)/(1-prob) + 1e-15))))
+
+dev = sum(dm$d.res^2)
+dev
+m1$deviance ## matches dev
+
+          
+```
+
+Null deviance is the deviance for the "null" model, that is, the model with only an intercept. 
+
+```{r}
+m0 = glm(veg ~ 1, 
+         data = dm, 
+         family = binomial)
+dm = dm %>%
+  mutate(prob0 = predict(m0, 
+                         newdata = dm, 
+                         type = 'response'), 
+         d.res0 = sign(veg - prob0)*sqrt(2*(
+                veg *log(   veg/    prob0  + 1e-15) + 
+             (1-veg)*log((1-veg)/(1-prob0) + 1e-15)))) 
+dev0 = sum(dm$d.res0^2)
+dev0
+m0$deviance ## matches dev0
+m1$null.deviance ## matches dev0
+
+```
+
+
+
 ## Interpreting the coefficients
 
 A coefficient $\beta_1$ is the change in log odds for a unit increase in $x_1$. Often we would prefer to interpret these coefficients on the probability scale.  This is a little tricky because the change in probability depends on the the value of $x_1$. 
@@ -892,6 +946,8 @@ g %>% pub()
 
 All that is to say that there isn't a completely straightforward way to interpret the coefficients on the probability scale. But here are a few things we *can* do. 
 
+### Change in probability at the average value for predictor
+
 - Use an average value for $x_1$ (and other predictors, if any). Compute the predicted probability for $\bar{x_1}+1$ minus the predicted probability using $\bar{x_1}$. The result is the change in probability associated with when $x_1$ increases from $\bar{x_1}$ to $\bar{x_1}+1$. 
 
 ```{r}
@@ -910,7 +966,9 @@ p1-p0
 ```
 For average values of $x_1$, a unit increase in `NDVI` corresponds to a increase in probability of 0.0077. 
 
-- Find the derivative logistic curve at this average point. If a unit change in $x_1$ is small, then this will be very similar to the previous bullet. Note that the derivative of the logistic curve is 
+### Slope of the logistic curve at this average value
+
+We could instead find the derivative logistic curve at this average point. If a unit change in $x_1$ is small, then this will be very similar to the previous bullet. Note that the derivative of the logistic curve is 
 
 $$ f(x) = \frac{e^{\beta_0 + \beta_1x_1}}{1+e^{\beta_0 + \beta_1x_1}}$$
 $$ f'(x) = \frac{\beta_1e^{\beta_0 + \beta_1x_1}
@@ -930,9 +988,13 @@ beta1*exp(beta0+beta1*xbar)/(1+exp(beta0+beta1*xbar))^2
 
 We find that for average values of `NDVI100`, a unit increase in `NDVI100` corresponds to a increase in probability of 0.01111. This is close-ish to the number from the previous bullet point because a unit increase in `NDVI100` is "small" relative to the range of the data, making the previous bullet point a very good approximation of the derivative.
 
-- Instead of using an average point, use another point of interest. For example, if $x_1$ is a 5-point Likert scale, where $x_1$ can be 1, 2, 3, 4, or 5, we might choose 3, regardless of the sample mean of $x_1$. If $x_1$ is symmetric about 0, we might choose 0. In our case, 0 is the middle of the range of `NDVI100` (-100 to 100), so we might choose 0. 
+### Use another point of interest
 
-- The maximum rate of change of the logistic curve occurs at the inflection point, and the slope there is $\beta_1/4$.
+Instead of using an average point, use another point of interest. For example, if $x_1$ is a 5-point Likert scale, where $x_1$ can be 1, 2, 3, 4, or 5, we might choose 3, regardless of the sample mean of $x_1$. If $x_1$ is symmetric about 0, we might choose 0. In our case, 0 is the middle of the range of `NDVI100` (-100 to 100), so we might choose 0. 
+
+### Maximum change in probability at the inflection point
+
+The maximum rate of change of the logistic curve occurs at the inflection point, and the slope there is $\beta_1/4$.
 
 $$ \frac{\beta_1e^{0}}
 {(1+e^{0})^2} = \frac{\beta_1}{4}$$
@@ -945,13 +1007,79 @@ beta1/4
 
 For our model, we get 0.1988211. This number will be higher than the other numbers we've discussed, since this is the *maximum* change in probability. Recall that we saw earlier that the curve was fairly steep near the inflection point for NDVI, so 0.1988 seems reasonable.
 
-- Find the average change in predicted probabilities over all observations in the data. Find $\hat{p}$ predictions for $x_1$, find $\hat{p}$ for $x_1+1$, subtract, and find the average. We already have most of this done, we just need to find the average of the `diff` column. 
+### Average across all observations
+
+Find the average change in predicted probabilities over all observations in the data. Find $\hat{p}$ predictions for $x_1$, find $\hat{p}$ for $x_1+1$, subtract, and find the average. We already have most of this done, we just need to find the average of the `diff` column. 
 
 ```{r}
 mean(dm$diff)
 ```
 
-The average change in probability for a unit increase in `NDVI` across all the observations in our data is 0.03. In our situation, this is larger than the change in probability at the average `NDVI100`, because the slope there is near 0.
+The average change in probability for a unit increase in `NDVI` across all the observations in our data is 0.03. In our situation, this is larger than the change in probability at the average `NDVI100`, because the slope at the average is near 0.
+
+### Summary of all
+
+```{r}
+y0 = predict(m1, 
+             newdata = data.frame(NDVI100 = 0), 
+             type = 'response')
+y0
+
+g = ggplot(dm, 
+       aes(x = NDVI100, 
+           y = veg))+
+  geom_jitter(height = 0.05, 
+              width  = 0, 
+              alpha  = 0.3)+
+  geom_smooth(method = 'glm', 
+              method.args = list(family = 'binomial')) + 
+  
+  
+  ## average value of NDVI100
+  geom_segment(x    = mean(dm$NDVI100), 
+               xend = mean(dm$NDVI100) + 1, 
+               y    = p0,
+               yend = p1,
+               color = pubblue, 
+               linewidth = 2) +
+  
+  ## at inflection point, point of interest
+  geom_segment(x    = 0, 
+               xend = 1, 
+               y    = y0,
+               yend = y0 + beta1/4, 
+               color = pubred, 
+               linewidth = 2)
+
+g %>% pub()
+```
+
+Average over all observations
+
+```{r}
+g = ggplot(dm, 
+       aes(x = NDVI100, 
+           y = veg))+
+  # geom_jitter(height = 0.05, 
+  #             width  = 0, 
+  #             alpha  = 0.3)+
+  geom_smooth(method = 'glm', 
+              method.args = list(family = 'binomial')) + 
+
+  ## across all observations
+  geom_segment(data = dm %>% slice(8:11), 
+               aes(x     = NDVI100 - 0,
+                   xend  = NDVI100 + 2,
+                   y     = prob - 0*(prob1 - prob),
+                   yend  = prob + 2*(prob1 - prob)
+                   ),
+               color     = pubred,
+               linewidth = 1,
+               alpha     = 1)
+
+g %>% pub()
+```
+
 
 
 # Multiple logistic regression
@@ -983,6 +1111,95 @@ summary(m8)$deviance
 ```
 
 Since `B2` isn't significant, and we saw earlier that it is highly correlated with `B3`, we might prefer `m6` which doesn't include `B2`, has similar residual deviance to `m7`, and all of the predictors are significant. 
+
+
+
+## Create other predictors
+
+Let's create some predictors for each location (aka do some "feature engineering") based on observations made during the data exploration above.
+
+
+
+
+
+## Vegetation classification
+
+
+
+
+## Landcover types and band values
+
+
+Here is a plot of `NDVI` for each `landcover` type. 
+
+```{r fig.height=4, fig.width=4}
+g = ggplot(dm, 
+       aes(x = NDVI, 
+           y = landcover, 
+           color = landcover))+
+  geom_jitter(height = 0.2, 
+              width = 0, 
+              show.legend = F)
+
+g %>% pub(base_size = 9)
+
+```
+
+
+Similarly, we show `B7` for each `landcover` type:
+
+```{r fig.height=4, fig.width=4}
+ggplot(d, aes(B7, landcover, color=landcover))+
+  geom_jitter(height=0.2, width=0)+ 
+  theme_pub(type='scatter', base_size=8)
+```
+
+
+```{r}
+ggplot(d, aes(B7, NDVI, color=landcover))+
+  geom_point()+
+  theme_pub(type='scatter', base_size=9)
+```
+
+Bands over time for each landcover type. 
+
+```{r}
+dd = d %>% 
+  filter(!is.infinite(EVI)) %>%
+  select(-lat, -lon) %>%
+  pivot_longer(cols = c(-ID, -landcover, -year, 
+                        -month, -day, -date)) %>%
+  mutate(year.mon = year+month/12) %>%
+  group_by(landcover, year.mon, name) %>%
+  summarise(value=mean(value)) %>%
+  rename(Landcover = landcover) %>%
+  mutate(Landcover = case_when(Landcover=='builtup'   ~ 'Built-up',
+                               Landcover=='cropland'  ~ 'Cropland', 
+                               Landcover=='natforest' ~ 'Natural Forest', 
+                               Landcover=='orchard'   ~ 'Orchard'))
+head(dd)
+
+title = "Intensity of bands over time for each type of landcover" 
+g = ggplot(dd, 
+           aes(x = year.mon, 
+               y = value, 
+               color = Landcover))+
+  geom_line(linewidth = .75)+
+  geom_point(size = 1)+
+  facet_wrap(~name, 
+             scales = 'free_y') + 
+  labs(title = title,
+       x = 'Date', 
+       y = 'Intensity')
+
+ g %>% 
+   pub(type = 'line', 
+       facet = T, 
+       base_size = 10,
+       xbreaks = c(2018, 2019, 2020), 
+       xlabels = as.character(c(2018, 2019, 2020))) 
+```
+
 
 
 
