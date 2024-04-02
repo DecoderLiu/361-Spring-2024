@@ -1,0 +1,627 @@
+---
+title: "PSET 05 - Poisson and Logistic Regression"
+author: "S&DS 361"
+date: "Due 2024-03-28"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, 
+                      warning = F, 
+                      message = F)
+library(nnet)
+library(pROC)
+library(tidyverse)
+library(pubtheme)
+```
+
+
+
+## Shot success in hockey
+
+In this part, we'll study NHL shots data.  In particular, we'll examine what kinds of shot attempts are more likely to be goals.
+
+```{r}
+d = readRDS('data/nhl.shots.rds')
+head(d,2)
+```
+
+Let's focus only on 5-on-5 situations where both goalies are on the ice, let's remove a few shots missing location information, and let's remove blocked shots.
+
+```{r}
+d = d %>% 
+  filter(str == '5v5' &  ## 5-on-5 only
+           !is.na(xcoord) &  ## remove shots with missing coordinates
+           event != 'BLOCK')   ## remove blocks
+```
+
+We'll focus on shot location (`distance` and `angle`) as predictors, and `goal` as the outcome:
+
+- `goal` = 1 if the shot attempt was a goal, 0 if it missed the net or was saved by the goalie.
+- `dist` = the distance of the shot attempt from the net
+- `angle` = the angle from the center of the ice that the shot was taken from (0 is center of the ice, -90 is left side along the red line, 90 is right side along the red line)
+- `abs.angle` = the absolute value of the `angle`   
+
+We first make a plot of the data, getting shot locations from `xcoord` and `ycoord`. We color the dots by `goal`.  
+
+Note that for each period, the coordinates for one team are flipped so that both teams are shooting in the same direction (to the right). So we'll see far more shots on the right side of the rink. 
+
+```{r}
+g = ggplot(d, 
+           aes(x = xcoord)) +
+  geom_histogram(color = pubbackgray, 
+                 binwidth = 5)
+
+g %>% 
+  pub(type = 'hist')
+```
+
+
+```{r fig.width=7, fig.height=4}
+d = d %>%
+  mutate(Goal = as.character(goal))
+
+title = "Locations of shots and goals" 
+g = ggplot(d, 
+           aes(x = xcoord, 
+               y = ycoord, 
+               color = Goal))+
+  geom_jitter(alpha = 0.3, 
+              size  = 0.75, 
+              show.legend = F)+
+  labs(title = title) +
+  scale_color_manual(values = c(publightgray, pubred))
+  
+
+g %>% 
+  pub(type = 'map')
+
+```
+
+The goal is on the right, and we probably don't care about the shots that are coming from outside the offensive zone.  So let's remove those. 
+
+Also, it would look nicer if this were plotted on a picture of a rink.  So first we'll load a picture of the rink and then plot points on top of it.  Because of the way the rink is oriented, we'll have to flip-flop our x and y coordinates and let `x = ycoord` and `y = -xcoord` (note the minus sign). You'll need to download the script `half.rink.r` from Canvas.
+
+```{r fig.width=4, fig.height=4}
+d = d %>% 
+  filter(xcoord >= 24, 
+         xcoord <= 100)
+
+source('R/half.rink.r')
+
+g = half.rink + 
+  geom_jitter(data = d, 
+              aes(x =  ycoord, 
+                  y = -xcoord, 
+                  color = Goal), 
+              alpha = 0.3, 
+              size  = 0.75, 
+              show.legend = F) +
+  labs(title = title) +
+  scale_color_manual(values = c(publightgray, pubred)) 
+
+g %>% 
+  pub(type = 'map', 
+      ylim = c(-100, -24))
+```
+
+We see mostly gray dots (shot attempts that weren't goals), but there are red dots (goals) too, and there are more of them closer to the goal (smaller values of `dist`) and very few far away from the goal (higher values of `dist`, near the blue line). (The goal is the black rectangle at the bottom, below the blue half circle.) There are also more red dots in the center of the ice (`angle` near 0) and fewer on the left and right sides (angles near -90 and 90, or `abs.angle` near 90). This suggests `dist`, `angle`, `abs.angle` are related to the probability that a shot attempt will be a `goal`. The data are not very well-separated, so we don't expect our error rates to be that low. But hopefully we can build a useful model.  
+
+#### 1. Observed proportion of goals by `dist`
+
+Find the observed proportion of goals for different subsets of `dist` and plot the result. Do these values appear to follow a logistic curve? Does the curve you found make sense given the overall proportion of goals in the data?
+
+```{r}
+dd = d %>%
+  mutate(bin = cut_interval(dist, 
+                            length = 5)) %>%
+  group_by(bin) %>%
+  summarise(g = sum(goal),
+            n = n(), 
+            p = mean(goal)) %>%
+  mutate(mid = seq(2.5, 77.5, by=5)) 
+
+dd %>% 
+  select(bin, mid, g, n, p)
+```
+
+```{r}
+g = ggplot(data = dd, 
+           aes(x    = mid, 
+               y    = p, 
+               size = n)) +
+  geom_point() 
+
+g %>% 
+  pub(ylim = c(0, 0.5))
+```
+
+It looks like a decreasing S-curve, just the lower half (no probabilities near 1). This isn't too surprising since the overall proportion of goals isn't very high, 0.0604. 
+
+```{r}
+sum(d$goal)
+sum(d$shot.att)
+nrow(d)
+mean(d$goal)
+```
+
+#### 2. Observed proportion of goals by `angle` and `abs.angle`. 
+
+Repeat the above question for `angle` and  `abs.angle`. Which one should you try in the model? Why? 
+
+```{r}
+dd2 = d %>%
+  mutate(bin = cut_interval(angle, 
+                            length = 10)) %>%
+  group_by(bin) %>%
+  summarise(g = sum(goal),
+            n = n(), 
+            p = mean(goal)) %>%
+  mutate(mid = seq(-85, 85, by=10)) 
+
+dd2 %>% 
+  select(bin, mid, g, n, p)
+```
+
+```{r}
+g = ggplot(dd2,
+           aes(x = mid, 
+               y = p, 
+               size = n)) +
+  geom_point()
+
+g %>% 
+  pub(ylim = c(0, 0.15))
+```
+
+
+```{r}
+dd3 = d %>%
+  mutate(bin = cut_interval(abs.angle, 
+                            length = 10)) %>%
+  group_by(bin) %>%
+  summarise(g = sum(goal),
+            n = n(), 
+            p = mean(goal)) %>%
+  mutate(mid = seq(5, 90, by=10)) 
+
+dd3 %>% 
+  select(bin, mid, g, n, p)
+
+```
+
+```{r}
+g = ggplot(dd3, 
+           aes(x    = mid, 
+               y    = p, 
+               size = n)) +
+  geom_point()
+
+g %>% 
+  pub(ylim = c(0, 0.15))
+```
+
+The `abs.angle` makes more sense. There isn't a monotone relationship between angle and the probability of a goal, since as discussed in the introduction "close to 0" is has higher probability, "far from 0" is a low probability, regardless if it is a positive or negative angle. We might also expect, for example, -45 and 45 degrees to be about the same. The figure above for `angle` looks roughly symmetric about `angle=0`. When using `abs.angle` those angles are treated the same. 
+
+There is a slight bump in the S-shaped curve, but we'll ignore that for these purposes. 
+
+#### 3. Build three logistic regression models that predict `goal` using the following predictors. Which model is "best"?  Why?
+
+- Model 1: `dist` 
+- Model 2: `abs.angle`
+- Model 3: `dist` and `abs.angle`
+
+```{r}
+glm1 = glm(goal ~ dist            , data = d, family = binomial)
+glm2 = glm(goal ~ abs.angle       , data = d, family = binomial)
+glm3 = glm(goal ~ dist + abs.angle, data = d, family = binomial)
+summary(glm1)
+summary(glm2)
+summary(glm3)
+```
+
+I'd pick the third one. The deviance is lowest, both predictors are significant and have the expected sign, and both predictors are ones that an end user would want to be in a model. 
+
+#### 4. Find the accuracy and error rate of each model, meaning, how often it correctly or incorrectly predicts the outcome. Also compute the AUC and log loss for all three models.  What do you notice? Which model would you use to predict the probability that a new shot will be a goal? 
+
+
+```{r}
+d$prob1 = predict(glm1, newdata = d, type = 'response')
+d$prob2 = predict(glm2, newdata = d, type = 'response')
+d$prob3 = predict(glm3, newdata = d, type = 'response')
+
+## Find accuracy
+d$class1 = 0
+d$class2 = 0
+d$class3 = 0
+
+d$class1[d$prob1 > 0.5] = 1
+d$class2[d$prob2 > 0.5] = 1
+d$class3[d$prob3 > 0.5] = 1
+
+acc1 = mean(d$class1 == d$goal)
+acc2 = mean(d$class2 == d$goal)
+acc3 = mean(d$class3 == d$goal)
+
+err1 = 1 - acc1
+err2 = 1 - acc2
+err3 = 1 - acc3
+
+acc1
+acc2
+acc3
+
+err1
+err2
+err3
+```
+
+Hmm, the accuracies are the same. That makes accuracy not super useful for evaluating these models. 
+
+```{r}
+## Find AUC and log loss
+roc1 = roc(d$goal, d$prob1)
+roc2 = roc(d$goal, d$prob2)
+roc3 = roc(d$goal, d$prob3)
+
+plot(roc1)
+plot(roc2)
+plot(roc3)
+
+auc(roc1)
+auc(roc2)
+auc(roc3)
+
+logloss1 = -mean(d$goal * log(d$prob1) + (1 - d$goal) * log(1 - d$prob1))
+logloss2 = -mean(d$goal * log(d$prob2) + (1 - d$goal) * log(1 - d$prob2))
+logloss3 = -mean(d$goal * log(d$prob3) + (1 - d$goal) * log(1 - d$prob3))
+
+logloss1
+logloss2
+logloss3
+
+```
+
+Model 3 looks best according to AUC and log loss so I'd choose that. We didn't really do any sort of test of out-of-sample predictions, so maybe we shouldn't be too confident of that. On the other hand, there are 90000 observations and two predictors, and we are using a parametric model, so there's probably a low chance that Model 3 is overfitting, so we're probably good. 
+
+
+#### 5. How are the accuracy, error rates, and proportion of 1's related?  Why are they related that way? How could you change your method of determining the predicted classes and obtain a different result?
+
+Accuracy is 1 minus error rate, obv. The error (from #4) is equal to the proportion of ones (from #1). All predicted classes from all 3 models are 0. 
+
+```{r}
+table(d$class1)
+table(d$class2)
+table(d$class3)
+```
+
+That is because none of the predicted probabilities are above 0.5.
+
+```{r}
+max(d$prob1, na.rm = T)
+max(d$prob2, na.rm = T)
+max(d$prob3, na.rm = T)
+```
+
+This will likely be true for any reasonable model we try with this data, since the rate of goals is so low. This is evidence that 
+
+1. A simple yes/no prediction isn't always the best choice. A probability is often preferable.
+2. Classification rate might not be the best metric for comparing models, especially when we have unbalanced classes. 
+
+We could change our threshold of 0.5 to something lower to convert to the predicted classes. Or, we could stick to using predicted probabilities to evaluate the models, since those are more granular anyway. Instead of knowing simply if the predictions were right or wrong, we know how far the predictions were from the actual outcomes. 
+
+
+## EV Stations
+
+The following data set is census and electric vehicle charging stations data set from earlier in the course. It contains one row per census tract (`GEOID`), several columns with census information along with columns that have the number of Level 2 (`lev2`) and Level 3 (`lev3`) electric vehicle charging stations for each census tract. 
+
+```{r}
+ev = readRDS('data/tracts.and.census.with.EV.stations.rds')
+ev = ev@data
+head(ev,2)
+```
+
+### 6. Data exploration
+
+Perform some data exploration and visualization that helps you learn about the data, with a focus on predicting the probability that a census tract has at least one Level 2 charging station. Discuss any notable observations. 
+
+```{r}
+ev = ev %>% 
+  mutate(l2 = ifelse(lev2>0, 1, 0), 
+         l2 = ifelse(is.na(l2), 0, l2)) 
+head(ev,2)
+```
+
+Could do a variety of visualizations here, similar to what we did for bands and `veg` in the class notes. 
+
+### 7. Estimate the probability of at least one `lev2` station
+
+Estimate the probability that a census tract has at least one Level 2 charging station. Justify the information you use in the model. Briefly discuss the results and any takeaways.
+
+```{r}
+glm1 = glm(l2 ~ house.value                                              , data=ev, family=binomial); 
+glm2 = glm(l2 ~ house.value + age                                        , data=ev, family=binomial);
+glm3 = glm(l2 ~ house.value + age + pop.density                          , data=ev, family=binomial); 
+glm4 = glm(l2 ~ house.value + age + pop.density + hh.income              , data=ev, family=binomial); 
+glm5 = glm(l2 ~ house.value + age + pop.density + hh.income + miles      , data=ev, family=binomial); 
+glm6 = glm(l2 ~ house.value + age + pop.density + hh.income + pop        , data=ev, family=binomial); 
+glm7 = glm(l2 ~ house.value + age + pop.density + hh.income + pop + state, data=ev, family=binomial); 
+# glm8 = glm(l2 ~ log(house.value) + age + log(pop.density) + log(hh.income) + pop + county, 
+#            data=ev, 
+#            family=binomial); takes a long time so commenting out. 
+
+summary(glm1)$deviance
+summary(glm2)$deviance
+summary(glm3)$deviance
+summary(glm4)$deviance
+summary(glm5)$deviance
+summary(glm6)$deviance
+summary(glm7)$deviance
+# summary(glm8)$deviance
+
+```
+
+```{r}
+ev$prob1 = predict(glm1, newdata=ev, type='response')
+ev$prob2 = predict(glm2, newdata=ev, type='response')
+ev$prob3 = predict(glm3, newdata=ev, type='response')
+ev$prob4 = predict(glm4, newdata=ev, type='response')
+ev$prob5 = predict(glm5, newdata=ev, type='response')
+ev$prob6 = predict(glm6, newdata=ev, type='response')
+ev$prob7 = predict(glm7, newdata=ev, type='response')
+#ev$prob8 = predict(glm8, newdata=ev, type='response')
+
+roc1 = roc(ev$l2, ev$prob1)
+roc2 = roc(ev$l2, ev$prob2)
+roc3 = roc(ev$l2, ev$prob3)
+roc4 = roc(ev$l2, ev$prob4)
+roc5 = roc(ev$l2, ev$prob5)
+roc6 = roc(ev$l2, ev$prob6)
+roc7 = roc(ev$l2, ev$prob7)
+#roc8 = roc(ev$l2, ev$prob8)
+
+auc(roc1)
+auc(roc2)
+auc(roc3)
+auc(roc4)
+auc(roc5)
+auc(roc6)
+auc(roc7)
+#auc(roc8)
+```
+
+Most of these variables were useful, except miles, possibly because population density contains information about square mileage and is more informative. Many of them have an unexpected sign, probably because of collinearity, since for example `house.value`, `pop.density`, and `hh.income` are all closely related. State was one of the best predictors and is also related to those. We could potentially decide to simplify the model if we needed to explain this to someone else. Later in the course, we'll also talk more about what we can do to deal with collinearity issues.
+
+## Landcover classification
+
+For this part our goal is to use `NDVI` and `B7` to classify each location as `natforest`, `cropland`, `orchard`, or `builtup`.  Note that `landcover` is a categorical outcome with 4 categories, which isn't something we focused on in class. But not to worry, we'll be doing some of the work for you. 
+
+First, here is some data prep to help you get started. 
+
+```{r}
+load('data/labeled_points.Rdata')
+
+## Create a data set that is one row per location
+## with mean(NDVI), mean(B7), and landcover type for each location
+labeled = labeled %>% 
+  dplyr::select(ID, landcover)
+
+d = labeled_train %>%
+  left_join(labeled, 
+            by = 'ID') %>%
+  group_by(ID) %>%
+  summarise(NDVI = mean(NDVI, na.rm=T), 
+            B7   = mean(B7  , na.rm=T),
+            landcover = unique(landcover)) %>%
+  as.data.frame()
+head(d)
+```
+
+We see now that there are 400 rows, 
+
+```{r}
+nrow(d)
+```
+
+one row per location, and each row has `ID`, mean `NDVI`, mean `B7`, and `landcover` type for each location.  
+
+### 8. Data exploration
+
+Perform some data exploration and visualization that helps you learn about the data, with a focus on predicting `landcover`. Discuss any notable observations. Which `landcover` types will be harder/easier to classify based on what you learned?
+
+
+Here is a plot of `NDVI` for each `landcover` type. 
+
+```{r fig.height=4, fig.width=4}
+g = ggplot(d, 
+           aes(NDVI, 
+               landcover, 
+               color = landcover))+
+  geom_jitter(height = 0.2, 
+              width  = 0)
+g %>% 
+  pub(type = 'scatter', 
+      base_size = 8)
+
+```
+
+Similarly, we show `B7` for each `landcover` type:
+
+```{r fig.height=4, fig.width=4}
+g = ggplot(d, 
+           aes(B7, 
+               landcover, 
+               color = landcover)) +
+  geom_jitter(height = 0.2, 
+              width  = 0)
+g %>% 
+  pub(type = 'scatter', 
+      base_size = 8)
+```
+
+Here is a summary of the mean NDVI and B7 for each landcover type. 
+
+```{r}
+d %>% 
+  group_by(landcover) %>%
+  summarise(NDVI = mean(NDVI),
+            B7   = mean(B7))
+```
+
+Here is scatter plot of `B7` vs `NDVI`, where the points are colored by `landcover`. 
+
+```{r}
+g = ggplot(d, 
+           aes(B7, 
+               NDVI, 
+               color = landcover)) +
+  geom_point()
+
+g %>% 
+  pub(type = 'scatter')
+```
+
+In the above plot, it looks like `natforest` and `orchard` are the most similar, so a model will get many of those wrong. `builtup` and `cropland` have more separation and should be easier.
+
+
+### 9. Modeling 
+
+One approach to this classification problem is to use multinomial logistic regression.  This is a generalization of logistic regression for when there are more than 2 categories. For each observation, instead of getting an estimated probability of success (or, 1, or "yes", etc.), we get estimated probabilities for all of the categories. 
+
+We use `NDVI`, `B7`, and an interaction term as predictors, and `landcover` as the outcome in the model below.
+
+```{r}
+library(nnet) ## install.packages("nnet") if you don't have the package
+mn1 = multinom(landcover ~ NDVI + B7 + B7:NDVI, 
+               data = d)
+#summary(mn1) ## in case you are curious, but not necessary
+```
+
+We can add predicted probabilities and the predicted class to our data frame using `predict` as usual. 
+
+```{r}
+mn1.landcover.probs = c('mn1.builtup', 
+                        'mn1.cropland', 
+                        'mn1.natforest', 
+                        'mn1.orchard')
+
+d[,mn1.landcover.probs] = predict(mn1, newdata=d, type = 'probs') %>% round(5)
+d$pred.landcover        = predict(mn1, newdata=d, type = 'class') ## predicted class
+d %>% head()
+```
+We now have one row per ID, and probability of each landcover type in the `mn1.xxxxxx` columns. 
+
+Another approach is to build 4 logistic regression models, one for each `landcover` type:
+
+1. outcome: 1 = `builtup`  , 0 = not `builtup`.   Predictors: `NDVI`, `B7`, and an interaction 
+2. outcome: 1 = `cropland` , 0 = not `cropland`.  Predictors: `NDVI`, `B7`, and an interaction 
+3. outcome: 1 = `natforest`, 0 = not `natforest`. Predictors: `NDVI`, `B7`, and an interaction 
+4. outcome: 1 = `orchard`  , 0 = not `orchard`.   Predictors: `NDVI`, `B7`, and an interaction 
+
+Build these 4 logistic regression models, find the predicted probabilities for each class, and show that the estimated probabilities are similar to those from our multinomial logistic regression model above.  Also, find the sum of the estimated probabilities from the multinomial logistic regression model, and the sum of estimated probabilities from the 4 logistic regression models. Based on these results, what is one downside of using 4 logistic regression models instead of multinomial logistic regression?
+
+```{r}
+d = d %>% 
+  mutate(builtup   = ifelse(landcover == 'builtup'  , 1, 0),
+         cropland  = ifelse(landcover == 'cropland' , 1, 0), 
+         natforest = ifelse(landcover == 'natforest', 1, 0), 
+         orchard   = ifelse(landcover == 'orchard'  , 1, 0)) %>%
+  as.data.frame()
+head(d)
+
+glm1 = glm(builtup   ~ NDVI + B7 + NDVI:B7, data=d, family=binomial)
+glm2 = glm(cropland  ~ NDVI + B7 + NDVI:B7, data=d, family=binomial)
+glm3 = glm(natforest ~ NDVI + B7 + NDVI:B7, data=d, family=binomial)
+glm4 = glm(orchard   ~ NDVI + B7 + NDVI:B7, data=d, family=binomial)
+
+glm.landcover.probs = c('glm.builtup'  , 'glm.cropland', 
+                        'glm.natforest', 'glm.orchard' )
+
+d$glm.builtup   = predict(glm1, newdata=d, type='response') %>% round(5)
+d$glm.cropland  = predict(glm2, newdata=d, type='response') %>% round(5)
+d$glm.natforest = predict(glm3, newdata=d, type='response') %>% round(5)
+d$glm.orchard   = predict(glm4, newdata=d, type='response') %>% round(5)
+
+```
+
+Can check they are similar in a few different ways. First, by inspection:
+
+```{r}
+d %>% 
+  dplyr::select(mn1.builtup  , glm.builtup, 
+                mn1.cropland , glm.cropland, 
+                mn1.natforest, glm.natforest, 
+                mn1.orchard  , glm.orchard, 
+                landcover) %>% 
+  head(10)
+```
+
+Yeah those look pretty similar.  Also these correlations are near 1:
+
+```{r}
+cor(d[, mn1.landcover.probs], 
+    d[, glm.landcover.probs]) %>% 
+  round(2) %>% 
+  diag()
+```
+
+And the average absolute differences are small:
+
+```{r}
+colMeans(abs(d[, mn1.landcover.probs] - 
+             d[, glm.landcover.probs]))
+```
+
+So yeah, the models give estimated probabilities that are pretty similar. Now let's find the sum of the probabilities for each location. 
+
+```{r}
+d$sum.mn1 = rowSums(d[,mn1.landcover.probs])
+d$sum.glm = rowSums(d[,glm.landcover.probs])
+
+d %>% 
+  dplyr::select(sum.mn1, sum.glm) %>%
+  head(10)
+```
+
+The 4 separate logistic regression the predictions do not add to 1. For the multinomial regression, they do (up to rounding error). So that's one downside of 4 separate logistic regression models for this type of modeling problem. 
+
+## Simulation
+
+### 10. Repeat #4 from PSET4, but for Poisson Regression. 
+
+In particular, suppose $y \sim Pois(\lambda)$ and $\lambda = exp(1 + 2x).$ Simulate some data by doing the following: 
+
+a. Generate a random sample of 10,000 $x$ values on $[0,1]$.
+b. Generate 10,000 $\lambda$s using $\lambda = e^{1 + 2x}.$
+c. Generate a random sample of 10,000 $y$ values using $y \sim Pois(\lambda).$ 
+
+Then, 
+
+d. Fit a Poisson regression model to the data and report the estimated coefficients. Are the estimates what you would expect? Why or why not? 
+
+e. Plot a scatter plot of $y$ versus $x$, and add a smooth curve to the plot. Does this visualization look as you would have expected? Do the Poisson regression assumptions appear to hold? Why or why not? 
+
+```{r}
+x      = runif(10000, 0, 1)
+lambda = exp(1 + 2*x)
+y      = rpois(10000, lambda = lambda)
+
+df = data.frame(x, y, lambda)
+head(df)
+
+glm1 = glm(y ~ x, 
+           data = df, 
+           family = 'poisson')
+
+summary(glm1)
+
+g = ggplot(df, aes(x, y)) + 
+  geom_point() + 
+  geom_smooth(method = 'glm',
+              method.args = list(family = 'poisson'),
+              color = pubred)
+g %>% pub()
+
+```
+
+Yes the estimates are what we would expect. The coefficients are roughly the numbers we used to generate the data. The scatter plot looks like what we would expect. We did after all generate the data using the Poisson distribution!

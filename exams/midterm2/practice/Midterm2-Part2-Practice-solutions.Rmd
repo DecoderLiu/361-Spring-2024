@@ -1,0 +1,302 @@
+---
+title: "Midterm 2, Part 2 Practice"
+author: "S&DS 361"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, 
+                      message = FALSE, 
+                      comment = NA, 
+                      warning = FALSE)
+library(tidyverse)
+library(pubtheme)
+```
+
+## Poisson regression vs Linear regression
+
+```{r}
+d = readRDS('data/games.rds')
+
+nba = d %>% 
+  filter(lg == 'nba', 
+         season %in% 1990:2023, 
+         season.type == 'reg') %>%
+  select(date, away, home, 
+         ascore, hscore, season, gid)
+head(d)
+
+da = nba %>% select(date, away, ascore, home, hscore, season, gid) %>% mutate(ha = 'away')
+dh = nba %>% select(date, home, hscore, away, ascore, season, gid) %>% mutate(ha = 'home')
+colnames(da) = c('date', 'team', 'score',  'opp', 'opp.score', 'season', 'gid', 'ha')
+colnames(dh) = c('date', 'team', 'score',  'opp', 'opp.score', 'season', 'gid', 'ha')
+dd = bind_rows(da, dh) %>% 
+  arrange(date, gid)
+head(dd)
+
+```
+
+```{r}
+ds = dd %>%
+  group_by(team, season) %>%
+  summarise(avg.score = mean(score), 
+            avg.opp.score = mean(opp.score))
+         
+head(ds,2)
+```
+
+```{r}
+dd = dd %>%
+  mutate(prev.season = as.character(as.numeric(season) - 1)) %>%
+  left_join(ds, 
+            by = c('team', 
+                   'prev.season' = 'season')) %>%
+  filter(!is.na(avg.score), 
+         score != 0) %>%
+  rename(avg.score.prev = avg.score)
+head(dd)
+
+```
+
+```{r}
+g = ggplot(dd,
+           aes(x = avg.score.prev, 
+               y = score)) +
+  geom_point(color = pubdarkgray,
+             alpha = 0.05)
+
+g %>% pub()
+```
+
+
+We previously fit this linear regression model for scores in NBA games.
+
+
+```{r}
+lm1 = lm(score ~ avg.score.prev, data=dd)
+summary(lm1)
+```
+
+
+## 1. Data exploration 
+
+Consider only one predictor `avg.score.prev` and outcome `score`. Perform some data exploration and visualization to determine whether linear regression assumptions or Poisson regression assumptions appear to be met more closely. (Feel free to copy/paste code that we've done previously.)
+
+
+There are a variety of things we can do here. First, let's add a smooth curve to the above plot. 
+
+```{r}
+g1 = g +
+  geom_smooth(method = 'lm', 
+              color = publightred) + 
+  geom_smooth(method = 'glm',
+              method.args = list(family = poisson),
+              color = pubblue) +
+  geom_smooth(color = pubred) 
+g1 %>% pub()
+```
+
+With this non-parametric model (meaning we haven't specify a parametric form like $y = \beta_0 + \beta_1 x$ or $y = e^{\beta_0 + \beta_1 x}$) shown in red, we don't see convincing evidence that a line is better than a exponential, or vice versa. Maybe in the middle, between `avg.score.prev = 90` and `110` there is evidence the curve is concave up, but it's very slight. Maybe there's a very slight edge towards exponential, if we are keeping score, in terms of the linearity assumption. 
+
+Now let's create bins. 
+
+```{r}
+dd = dd %>%
+  mutate(bin = cut_interval(avg.score.prev, 
+                            length = 5))
+head(dd)
+```
+
+Let's plot the distribution of score separately for every bin. 
+
+```{r fig.height = 5, fig.width = 5}
+g = ggplot(dd, 
+           aes(x = score))+
+  geom_histogram(binwidth = 5)+
+  facet_wrap(~bin, 
+             ncol = 2,
+             scales = 'free_y', 
+             dir = 'v')
+
+g %>% 
+  pub(type = 'hist', 
+      facet = T, 
+      base_size = 9)
+```
+
+Visually these look normal, but Poisson distribution for large $\lambda$ is approximately normal. 
+
+Let's find the mean for each bin, and then add the normal and Poisson distributions with the same mean to each plot. 
+
+
+```{r}
+bin.means = 
+  bin.means = dd %>%
+  group_by(bin) %>%
+  summarise(mean.score = mean(score), 
+            var.score = var(score), 
+            n = n())
+bin.means
+```
+
+The variance is greater than the mean, so normal is probably going to outperform Poisson below. 
+
+```{r}
+x = seq(60, 160, by = 1)
+n.bins = nrow(bin.means)
+df = data.frame(x = rep(x, 
+                        times = n.bins), 
+                bin = rep(bin.means$bin, 
+                          each = length(x))) %>%
+  left_join(bin.means, 
+            by = 'bin')
+head(df)
+
+```
+
+```{r}
+df = df %>% 
+  mutate(norm = dnorm(x = x, 
+                      mean = mean.score, 
+                      sd = sqrt(var.score)), 
+         pois = dpois(x = x, 
+                      lambda = mean.score))
+head(df)
+
+```
+
+
+Let's plot the histograms, a vertical line for the mean, and dots for the normal and Poisson distributions. 
+
+```{r fig.height = 5, fig.width = 5}
+g = ggplot(data = dd, 
+       aes(x = score, 
+           y = after_stat(density)))+
+  geom_histogram(binwidth = 5,
+                 fill = publightgray, 
+                 color = pubmediumgray) + 
+  geom_vline(data = bin.means, 
+             aes(xintercept = mean.score), 
+             color = pubdarkgray)+
+  geom_line(data = df, 
+             aes(x = x, 
+                 y = norm), 
+             color = pubred, 
+             linewidth = 0.5) + 
+  geom_line(data = df, 
+             aes(x = x, 
+                 y = pois), 
+             color = pubblue) + 
+  facet_wrap(~bin,
+             ncol   = 2, 
+             scales = 'free_y', 
+             dir    = 'v')
+
+g %>% 
+  pub(type = 'hist',
+      facet = T, 
+      base_size = 9)
+```
+
+The normal distribution appears to be a better match. The mean of the data isn't equal to the variance of the data for each subset, so the inflexibility of the Poisson distribution (for which the mean equals the variance) causes it to be a worse fit. 
+
+## 2. Poisson Regression 
+
+Fit a Poisson regression model. What are the best ways to compare your linear regression and Poisson regression models? Which model do you think is best for this data? 
+
+```{r}
+glm1 = glm(score ~ avg.score.prev, 
+           data = dd, 
+           family = poisson)
+summary(glm1)
+```
+
+Make predictions
+
+```{r}
+dd = dd %>% 
+  mutate(lm1  = predict( lm1, newdata = dd), 
+         glm1 = predict(glm1, newdata = dd, type = 'response'))
+
+dd %>% 
+  summarise(mse.lm1  = mean((score - lm1)^2), 
+            mse.glm1 = mean((score - glm1)^2)) 
+  
+
+```
+
+Mean Squared Error is almost the same, with the Poisson regression a little lower. This matches are our observation from the scatter plot that an exponential relationship might be very slightly better than linear.
+
+If we care more about the mean predictions, then maybe we would prefer the Poisson regression. If we care about having more precise estimates of uncertainty, we might be prefer linear regression. 
+
+
+## Simulation
+
+## 3. Simulate 10,000 data points with these properties.
+
+1. $x$ is uniformly distributed on the interval $[-1,1]$. **This originally said $[0,1]$, but that was a typo.**
+2. $y$ is 0 or 1. 
+3. When $x$ is near -1, $y$ is usually 0, but not always. 
+4. When $x$ is near  1, $y$ is usually 1, but not always. 
+5. When $x$ is near  0, $y$ is sometimes 0 and sometimes 1, in roughly equal proportions. 
+6. As $x$ goes from -1 to 1, $y$ smoothly transitions from having more 0s to having more 1s. 
+
+
+We can use a logistic function, and possibly tweak some of the coefficients. 
+
+```{r}
+n = 10000
+
+## 1. Simulate x uniformly distributed on [-1,1]
+x = runif(n, min = -1, max = 1)
+
+## 2, 3, 4, 5, 6. Simulate y from bernoulli 
+## where p = exp(x)/(1 + exp(x))
+y = rbinom(10000, size = 1, prob = exp(x)/(1 + exp(x)))
+
+## Create a df
+df = data.frame(x = x, 
+                y = y)
+head(df)
+
+```
+
+
+## 4. Plot the simulated points
+
+Plot the simulated points generated in #3 and add a smooth curve to the scatter plot. 
+
+```{r}
+g = ggplot(df, 
+           aes(x = x, 
+               y = y))+
+  geom_jitter(height = 0.1, 
+              width  = 0, 
+              alpha  = 0.1, 
+              color  = pubdarkgray)+
+  geom_smooth() 
+
+g %>% pub()
+```
+
+We wanted to have more 0s when $x$ is near -1, and more 1s when $x$ is near 1, and we have that. The term "usually" in conditions #2 and #3 above is vague. If we think this doesn't count as $y$ is "usually" 0 when $x$ is -1, and we want more 0s when $x$ is -1, then we can increase the coefficients in front of $x$ in the logistic function. 
+
+
+```{r}
+y = rbinom(10000, size = 1, prob = exp(5*x)/(1 + exp(5*x)))
+df = data.frame(x = x, 
+                y = y)
+g = ggplot(df, 
+           aes(x = x, 
+               y = y))+
+  geom_jitter(height = 0.1, 
+              width  = 0, 
+              alpha  = 0.1, 
+              color  = pubdarkgray)+
+  geom_smooth() 
+
+g %>% pub()
+
+```
