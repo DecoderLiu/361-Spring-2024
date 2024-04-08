@@ -1,0 +1,175 @@
+---
+title: "Census Data"
+author: "S&DS 361"
+date: "2024-04-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(leaflet)
+library(pubtheme)
+library(sp)
+library(sf)
+```
+
+```{r}
+d = readRDS('data/tracts.and.census.with.EV.stations.rds')
+head(d)
+```
+Let's check what the data looks like. 
+
+```{r}
+is(d)
+#str(d)
+slotNames(d)
+colnames(d)
+names(d)
+```
+
+The important "slots" are the data, (which has... you guessed it... a data frame, containing... you guessed it... data) and polygons, which was borders of the census tracts. Use `@` to access these "slots" 
+like you use $ for objects in a list or columns in a `data.frame`. 
+
+Let's see what's in the data slot.
+
+```{r}
+head(d@data, 2)
+is(d@data)
+df = d@data
+head(df)
+dim(df)
+length(df)
+```
+Let's dive into the polygons.  
+
+```{r}
+head(d@polygons, 2)
+dim(d@polygons)
+length(d@polygons) ## ## same number of polygons as rows in the data frame above
+is(d@polygons)
+d@polygons[[1]] ## the first polygon, all info
+d@polygons[[1]]@Polygons      ## Polygons slot. A list with just 1 item.
+d@polygons[[1]]@Polygons[[1]] ## Select just that one item, which itself has several slots
+d@polygons[[1]]@Polygons[[1]]@coords %>% head() ## just the coords, in a data frame
+is(d@polygons[[1]]@Polygons[[1]]@coords)
+dim(d@polygons[[1]]@Polygons[[1]]@coords)
+```
+
+A quick plot of these coordinates shows that it is a polygon with a ~bazillion sides (328 to be exact)
+
+```{r}
+plot(d@polygons[[1]]@Polygons[[1]]@coords, type = 'o') ## outline of the first census tract
+```
+
+Fortunately we don't typically have to work with polygons. 
+They will be automatically be handled by functions we'll use.
+
+Since plotting every tract will take forEVER, let's filter out everything but CT.
+
+```{r}
+d = d[d$state == 'CT',]
+dim(d)
+length(d@polygons)
+dim(d@data)
+```
+
+Let's extract the data frame and the coordinates. The coordinates are placed one column of the data frame. 
+
+
+```{r}
+dg = st_as_sf(d) 
+head(dg,2)
+head(dg$geometry, 2)
+```
+
+We can now use `geom_sf` to plot the polygons on a `ggplot`. We can choose to fill the polygons with a color based on a column in our data. 
+
+```{R}
+g = ggplot(dg, 
+       aes(fill = hh.income)) + 
+  geom_sf(show.legend = F) 
+
+g %>% pub('map') ## if this gives an error, re-install pubtheme 
+                 ## devtools::install_github("bmacGTPM/pubtheme")
+                 ## and remove and add the package
+                 ## or comment this out and just run `g`
+
+```
+
+Define a color palette. 
+
+```{r}
+pal1 = colorNumeric(palette = c(pubbackgray, 
+                                pubblue), 
+                    domain = NULL)
+pal1
+```
+
+This color palette is a function. Let's create a label that we'll use for the tooltip. 
+
+```{r}
+d@data$label = paste0('GEOID: ', d@data$GEOID, '<br>', 
+                      d@data$county, '<br>', 
+                      d@data$state, '<br>',
+                      'Population: ', d@data$pop, '<br>', 
+                      'Median HH Income: ', d@data$hh.income)
+head(d@data$label)
+```
+
+Finally, a leaflet plot. 
+
+```{r}
+l1 = leaflet(d) %>%
+  addProviderTiles('CartoDB.Positron') %>%
+  addPolygons(fillColor = ~pal1(hh.income), 
+              label = ~label %>% lapply(htmltools::HTML), 
+              weight = 0.5,
+              color = 'black',
+              fillOpacity = 0.8) %>%
+  setView(lng = -72.79458, 
+          lat = 41.51979, 
+          zoom = 9) %>%
+  addTiles()
+l1
+```
+
+We can EV station locations to this map. First we'll prep the data. 
+
+```{r}
+dc = readRDS('data/EVstations.rds')
+head(dc)
+```
+
+```{r}
+dc = dc[dc$State == 'CT',]
+dc = dc %>%
+  rename(lev2 = EV.Level2.EVSE.Num, 
+         lev3 = EV.DC.Fast.Count) %>%
+  mutate(label = paste0(Station.Name, '<br>', 
+                        'Level 2: ', lev2, '<br>', 
+                        'Level 3: ', lev3))
+head(dc$label)
+```
+
+We can add on to our previous plot `l1`. 
+
+```{r}
+l1 %>%
+  
+  addCircleMarkers(data = dc %>% filter(lev2 != 0),
+                   lng = ~Longitude, 
+                   lat = ~Latitude, 
+                   label = ~label %>% lapply(htmltools::HTML), 
+                   color = pubblue, 
+                   radius = ~lev2) %>%
+  
+  addCircleMarkers(data = dc %>% filter(lev3 != 0),
+                   lng = ~Longitude, 
+                   lat = ~Latitude, 
+                   label = ~label %>% lapply(htmltools::HTML), 
+                   color = pubred, 
+                   radius = ~lev3) 
+  
+```
+
