@@ -1,0 +1,600 @@
+---
+title: "EV Charging Stations"
+author: "S&DS 361"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(pubtheme)
+library(MASS, exclude = 'select')
+library(pscl) 
+```
+
+## Data exploration and visualization
+
+For the Poisson distribution, the variance equals the mean. Often with count data the variance is not equal to the mean (often larger than the mean), and Poisson regression may not be appropriate in these cases. 
+
+Let's revisit the census data with EV charging stations. 
+
+```{r}
+dc = readRDS('data/tracts.and.census.with.EV.stations.rds')
+dc = dc@data ## keep just the data frame, not the polygons
+dc = dc %>% 
+  
+  ## Change NAs to 0s, and 
+  ## since charging stations seem to come in pairs, create new columns
+  ## for pairs of charging stations
+  mutate(lev2 = ifelse(is.na(lev2), 0, lev2), 
+         lev3 = ifelse(is.na(lev3), 0, lev3), 
+         lev2pairs = round(lev2/2),
+         lev3pairs = round(lev3/2)) %>%
+  
+  ## Keep tracts with at least one charging station, 
+  ## and get rid of a couple of outliers
+  ## Let's not do this this time
+  # filter((lev2!=0 | lev3!=0) #& lev2<=50) %>%
+  ## Create log.house.value column
+  mutate(log.house.value = log(house.value))
+
+```
+
+Let's find the average `lev2` charging stations for different subsets of `house.value`. 
+
+```{r}
+dc = dc %>%
+  filter(!is.na(house.value)) %>%
+  mutate(bin = cut_interval(log.house.value, 
+                            length=0.5)) 
+
+bin.means = dc %>%
+  group_by(bin) %>%
+  summarise(mean = mean(lev2), 
+             var =  var(lev2), 
+               n =    n()) %>%
+  mutate(mid = seq(9.25, 14.75, by=.5), 
+         mean2 = mean^2, 
+         sd = sqrt(var)) %>%
+  filter(!is.na(bin))
+bin.means
+
+```
+
+The variance is much higher than the mean for these subsets. But at least it looks like we might have an exponential relationship, at least for the subsets in the middle with lots of observations. 
+
+```{r}
+g = ggplot(dc, 
+           aes(x = log.house.value, 
+               y = lev2))+
+  geom_jitter(alpha  = 0.1,
+              width  = 0, 
+              height = 0.2) +
+  geom_point(data = bin.means, 
+             aes(x = mid, 
+                 y = mean, 
+                 size = n), 
+             color= pubred)+
+  geom_line(data = bin.means, 
+            aes(x = mid, 
+                y = mean), 
+            color = pubred) #+ 
+  # geom_segment(data = bin.means, 
+  #              aes(x    = mid, 
+  #                  xend = mid, 
+  #                  y    = mean - var, 
+  #                  yend = mean + var), 
+  #              color = pubred)
+
+g %>% pub()
+
+```
+
+Hmm let's only show `y` up to 100. 
+
+
+```{r}
+g = ggplot(dc, 
+           aes(x = log.house.value, 
+               y = lev2))+
+  geom_jitter(alpha  = 0.1,
+              width  = 0, 
+              height = 0.2) +
+  geom_point(data = bin.means, 
+             aes(x = mid, 
+                 y = mean, 
+                 size = n), 
+             color= pubred)+
+  geom_line(data = bin.means, 
+            aes(x = mid, 
+                y = mean), 
+            color = pubred) #+ 
+  # geom_segment(data = bin.means, 
+  #              aes(x    = mid, 
+  #                  xend = mid, 
+  #                  y    = mean - var, 
+  #                  yend = mean + var), 
+  #              color = pubred)
+
+g %>% 
+  pub(ylim = c(0, 100))
+```
+
+
+Let's plot a histogram with different subsets, along with Poisson and negative binomial distributions with the same mean (and in the case of negative binomial, the same variance). 
+
+```{r}
+## Poisson distribution with same mean as the data for each bin.
+## Neg bin with same mean and variance
+## For Neg bin we'll use size = bin.mean^2/(bin.var-bin.mean). 
+ddist = bin.means %>% 
+  dplyr::select(bin, mid, mean, var) 
+
+maxy=30
+
+pois.col.names = paste0('pois.' , 0:maxy)
+nb.col.names   = paste0('nb.', 0:maxy)
+ddist[,pois.col.names] = 0 #as.numeric(NA)
+ddist[,  nb.col.names] = 0 #as.numeric(NA)
+
+for (b in 1:nrow(bin.means)){
+  bin.mean = ddist$mean[b]
+  bin.var  = ddist$var[b]
+  ddist[b,pois.col.names] =   rbind(dpois(0:maxy, lambda=bin.mean))
+  ddist[b,  nb.col.names] = rbind(dnbinom(0:maxy, mu = bin.mean,
+                                    size = bin.mean^2/(bin.var-bin.mean)))
+}
+ddist = ddist %>%
+  pivot_longer(cols = c(-bin, -mid, -mean, -var)) %>%
+  separate(col=name, sep='[.]', into=c('dist', 'y')) %>%
+  mutate(y = as.numeric(y))
+head(ddist)
+```
+
+```{r fig.height=6, fig.width=8}
+g = ggplot(dc, 
+           aes(x = lev2, 
+               y = after_stat(density)))+
+  geom_histogram(binwidth = 1, 
+                 color = pubdarkgray, 
+                 fill = publightgray)+
+  
+  ## add dots for Pois and NegBin
+  geom_point(data = ddist, 
+             aes(x = y, 
+                 y = value, 
+                 color = dist))+
+  facet_wrap(~bin, 
+             scales = 'free_y', 
+             ncol = 3)
+
+g %>% 
+  pub(type = 'hist', 
+      base_size = 36/4, 
+      facet = T, 
+      xlim = c(0,40))
+```
+
+The Poisson doesn't look that great. Negative binomial looks better. There's weirdness near 0 because many census tract have 0 charging stations. Let's zoom in a little and only look at y from 0 to 0.2. 
+
+```{r fig.height=6, fig.width=8}
+g %>% 
+  pub(type = 'hist', 
+      base_size = 36/4, 
+      facet = T, 
+      xlim = c(0, 20), 
+      ylim = c(0, 0.2))
+```
+
+
+## Poisson, Quasi-Poisson, and Negative Binomial Regression Models
+
+Let's fit a Poisson regression and find the standardized residuals. If the variance were equal to the mean, we should expect these to follow a standard normal distribution. Based on what we saw above, the standardized residuals won't be normal.
+
+```{r}
+glm1 = glm(lev2 ~ log.house.value, data=dc, family='poisson')
+summary(glm1)
+dc$pred  = predict(glm1, newdata=dc, type='response')
+dc$res   = dc$lev2 - dc$pred
+dc$z.res = dc$res/sqrt(dc$pred) 
+
+```
+
+Note that when standardizing the residuals, we didn't need to center them first since they are already mean 0.
+
+```{r}
+mean(dc$res)
+```
+
+Let's plot a histogram of the residuals.
+
+```{r}
+hist(dc$z.res)
+```
+
+They are skewed, which isn't great, but also the spread extends well beyond -3 and 3. 
+
+The amount of over dispersion can be calculated as 
+
+```{r}
+disp = sum(dc$z.res^2)/(nrow(dc)-2) 
+disp
+```
+Anything over 1 would be overdispersion, anything under 1 would be underdispersion. There is quite a bit of overdispersion in this case.  
+
+Let's now fit a quasipoisson and Negative Binomial Regression model.  
+
+```{r}
+glm2 =    glm(lev2 ~ log.house.value, data=dc, family='quasipoisson')
+glm3 = glm.nb(lev2 ~ log.house.value, data=dc)
+summary(glm2)
+summary(glm3)
+
+```
+
+Let's summarize the coefficients and standard errors for the 3 models.
+
+```{r}
+coefs = rbind(data.frame(summary(glm1)$coefficients[,1:2], model='Pois'),
+              data.frame(summary(glm2)$coefficients[,1:2], model='Quasi'),
+              data.frame(summary(glm3)$coefficients[,1:2], model='NegBin')) %>%
+  mutate(varname = rep(c('(Intercept)', 'log.house.value'),3)) %>%
+  rename(est = Estimate,
+         se = Std..Error) %>%
+  arrange(varname) %>%
+  remove_rownames() %>%
+  dplyr::select(varname, model, est, se) 
+coefs
+```
+
+Note that for Poisson and quasipoisson, the coefficients are equal, but the standard errors for the quasipoisson are higher. The quasipoisson is basically a fudged Poisson where you rescale the standard errors by multiplying by the square root of the dispersion.
+
+```{r}
+rbind(summary(glm1)$coefficients[,'Std. Error']*sqrt(summary(glm2)$dispersion),
+      summary(glm2)$coefficients[,'Std. Error'])
+```
+
+Note that the dispersion factor given in the summary of the quasipoisson model is (almost [see next section]) the same as the one we found above. 
+
+```{r}
+summary(glm2)$dispersion
+disp = sum(dc$z.res^2)/(nrow(dc)-2) 
+disp
+```
+
+The Negative Binomial coefficients are about the same as the Poisson coefficients, but the standard errors for the negative binomial are higher because, like the quasipoisson model, it is accounting for overdispersion. The negative binomial is not a fudged version of the Poisson though, it's a model using the assumption that the outcome has an approximate negative binomial distribution for a given set of predictors.  For this reason, it may be preferred over quasipoisson. Note that the negative binomial distribution has two parameters, which gives it more flexibility to handle larger variances.
+
+
+### Note about `glm` outputs
+
+The reason for the small difference in the dispersion we saw above is that `summary.glm` is using `weights` from the final iteration of the IWLS algorithm used to fit the model, and these weights are not exactly the means/variances that we used in the manual calculation.
+
+```{r}
+rbind(head(glm2$weights),
+      head(glm2$fitted.values))
+
+sum(dc$z.res^2)/(nrow(dc)-2) 
+summary(glm2)$dispersion    
+sum(glm2$residuals^2 * glm2$weights)/glm2$df.residual 
+
+```
+
+Note that the residuals from `glm1$residuals` are not the residuals we found. They are the residuals from the final iteration of the IWLS algorithm used to fit the model, and they are equal to the residuals we found divided by the fitted values (aka the mean aka the variance). 
+
+```{r}
+rbind(head(dc$res), 
+      head(dc$res/dc$pred),
+      head(glm1$residuals))
+```
+
+Note also that this normalization (divide by the variance) is different that what we used to compute the standardized residuals (divide by the standard deviation).
+
+Instead of computing dispersion by hand, we'll look at the `glm` output. We only did it by hand to build intuition about how dispersion is computed and in what situations to expect overdispersion. 
+
+### Another summary of the three Models 
+
+```{r}
+glm1 =    glm(lev2 ~ log.house.value, data=dc, family='poisson')
+glm2 =    glm(lev2 ~ log.house.value, data=dc, family='quasipoisson')
+glm3 = glm.nb(lev2 ~ log.house.value, data=dc)
+coefs = rbind(data.frame(summary(glm1)$coefficients[,1:2], model='Pois'),
+              data.frame(summary(glm2)$coefficients[,1:2], model='Quasi'),
+              data.frame(summary(glm3)$coefficients[,1:2], model='NegBin')) %>%
+  mutate(varname = rep(c('(Intercept)', 'log.house.value'),3)) %>%
+  rename(est = Estimate,
+         se = Std..Error) %>%
+  arrange(varname) %>%
+  remove_rownames() %>%
+  dplyr::select(varname, model, est, se) 
+
+coefs
+```
+
+## Bootstrapping
+
+The calculation of the standard errors depending on our model assumptions. Suppose we aren't sure about our assumptions, or suppose we think they are not fully met and we don't trust our standard errors.  We can use bootstrapping to estimate them instead. 
+
+With the EV charging station data, we saw spikes at even numbers of charging stations, so the Poisson and Negative Binomial model assumptions aren't quite met. Let's use bootstrapping to estimate the standard errors for the coefficients and predictions.
+
+
+### Algorithm
+
+1. Suppose our data has $n$ observations. Create a "bootstrap sample" of the data set by randomly selecting $n$ observations *with replacement*. Some observations are selected more than once, and some aren't selected. This produces a data set with the same number of observations as the original data, made of the observations from the original data, with some of them repeated and some of them missing. 
+2. Fit a model to estimate coefficients or compute some other statistic. 
+3. Repeat many times (e.g. 1,000, 10,000), each time recording the value of the coefficients or statistics. 
+4. Compute the standard deviation of those coefficients or another statistic. That serves as an estimate of the standard error. 
+
+If assumptions of the model are closely met, the bootstrapped standard errors will match the standard errors given in the summary output. If the assumptions aren't met, then can be fairly different. 
+
+Let's try this with all three models. We know that for the first model (Poisson) the assumption of mean=variance is not met, so expect the bootstrapped standard errors to be different than those given by the model summary output. The negative binomial model assumptions are more closely met, so that might be ok. 
+
+```{r}
+## so that we all get the same random numbers
+set.seed(123)
+
+## number of bootstrap samples
+J=100
+
+## Create a data frame to keep track of the coefficients and predictions
+boot.results = data.frame(j=1:J, coef=NA, lambdahat=NA)
+
+## Create a data frame with one observation to make predictions
+dp = data.frame(log.house.value=12)
+
+## Loop over j, create bootstrap sample, fit model, record coef and pred
+for(j in 1:J){
+  
+  ## print j to show progress
+  cat(j, '')
+  
+  ## pick rows to use for the bootstrap sample
+  rows = sample(x=1:nrow(dc), size = nrow(dc), replace = T)
+  
+  ## create bootstrap sample
+  db = dc[rows,]
+  
+  ## Fit models 
+  m1 = glm(lev2 ~ log.house.value, data = db, family='poisson')
+  
+  ## Keep track of the coefficients
+  boot.results[j, 'coef'] = m1$coef[2]
+  boot.results[j, 'lambdahat'] = predict(m1, newdata=dp, type='response')
+  
+  ## end loop over j
+}
+head(boot.results)
+```
+
+Each bootstrap sample is different, so the estimate coefficients in each model are different.
+
+```{r}
+g = ggplot(boot.results, 
+           aes(x = coef))+
+  geom_histogram(color = pubbackgray)
+
+g %>% pub(type = 'hist')
+```
+
+Since the coefficients are different, the predictions are different
+
+```{r}
+g = ggplot(boot.results, 
+       aes(x = lambdahat))+
+  geom_histogram()
+
+g %>% 
+  pub(type = 'hist')
+```
+
+
+```{r}
+coefs
+mean(boot.results$coef)
+sd(boot.results$coef)
+```
+
+Compare the bootstrapped standard error for lambda to the standard error given by the negative binomial regression model. 
+
+```{r}
+## Quasipoisson
+predict(glm2, 
+        newdata = dp, 
+        type = 'response', 
+        se.fit = T)$se.fit
+
+## Negative binomial
+predict(glm3, 
+        newdata = dp, 
+        type = 'response', 
+        se.fit = T)$se.fit
+
+## Bootstrapped Poisson
+sd(boot.results$lambdahat) 
+```
+
+## Zero-inflated Poisson
+
+We noted that there are a LOT of zeros in the data. 
+
+```{r}
+zip1  = zeroinfl(lev2 ~ log.house.value | log.house.value, data = dc)
+zinb1 = zeroinfl(lev2 ~ log.house.value | log.house.value, data = dc, dist = 'negbin')
+```
+
+The `zeroinfl` function fits a zero-inflated model, which is a mixture of a Poisson model and a model for excess zeros. The `dist` argument can be used to specify the distribution for the count data. The default is `poisson`, but we can also use `negbin` for a negative binomial distribution.
+
+```{r}
+summary(glm1)$coefficients
+summary(glm3)$coefficients  
+summary(zip1)$coefficients
+summary(zinb1)$coefficients
+
+```
+
+```{r}
+dc$glm1  = predict(glm1, newdata=dc, type='response')
+dc$glm3  = predict(glm1, newdata=dc, type='response')
+dc$zip1  = predict(zip1, newdata=dc, type='response')
+dc$zinb1 = predict(zinb1, newdata=dc, type='response')
+
+dc %>% 
+  select(GEOID, lev2, glm1, glm3, zip1, zinb1) %>%
+  head()
+  
+```
+
+RMSE
+
+```{r}
+dc %>% 
+  select(GEOID, lev2, glm1, glm3, zip1, zinb1) %>%
+  pivot_longer(cols = -c(GEOID, lev2)) %>%
+  mutate(err = value - lev2) %>%
+  group_by(name) %>%
+  summarise(rmse = sqrt(mean(err^2)))
+```
+
+
+## Binomial Logistic regression
+
+For logistic regression we assumed that the outcome is binary and $y_i \sim Bern(p_i)$, or $y_i \sim Bin(1, p_i)$. The logistic model can also be used with count data, where $y_i$ is the number of successes out of $n_i$ trials and we assume that $y_i \sim Bin(n_i,p_i)$. 
+
+Note that this model is used in different situations than Poisson regression is used since there is a number of trials and that is the maximum count that is possible. In other words, the possible values of $y_i$ are $0,1,2, \ldots, n_i$. When we assume that $y_i \sim Pois(\lambda_i)$, there is no fixed number of trials and no theoretical maximum for $y_i$, as $y_i$ can be any non-negative integer $0, 1, 2, 3, \dots$. 
+
+
+### EV stations by county 
+
+As a quick example, let's use our EV charging station data. 
+
+```{r}
+dc = readRDS('data/tracts.and.census.with.EV.stations.rds')
+dc = dc@data
+head(dc,2)
+```
+
+
+Recall that we have previous estimated the probability that a census tract had at least one Level 2 charging station. Suppose we didn't actually have census track level information (one row per census tract), and only have county-level information (one row per county) with the number of census tracts in a county `n`, and how many of those census tracts have at least one Level 2 charging station `y`. Sometimes this information is given as the proportion of tracts that have at least one Level 2 charging station, so we'll also compute a proportion column `p`. We'll also compute the mean of the `house.value` column for each county. 
+
+
+```{r}
+dc = dc %>% 
+  filter(!is.na(house.value)) %>%
+  mutate(y = ifelse(lev2>0, 1, 0), 
+         y = ifelse(is.na(y), 0, y)) %>%
+  dplyr::select(GEOID, county, y, house.value) %>%
+  group_by(county) %>%
+  mutate(county.house.value = mean(house.value, na.rm=T)) %>% 
+  arrange(county)
+head(dc)
+```
+We now group by `county` and summarize to create a data frame with one row per county from the data with one row per tract. 
+
+```{r}
+ddc = dc %>%
+  group_by(county) %>%
+  summarise(y = sum(y), 
+            n = n(), 
+            p = y/n, 
+            county.house.value = mean(house.value))
+head(ddc)
+tail(ddc)
+```
+
+
+Our outcome `y` is not binary, but we can still use logistic regression. To use `glm` we need to supply the number of successes `y` and number of failures `n-y` (as opposed to the number of successes `y` and total number of trials `n`).  
+
+```{r}
+glm1 = glm(cbind(y, n-y) ~ county.house.value, 
+           data = ddc, 
+           family=binomial)
+summary(glm1)
+```
+
+The output is the same familiar output we had with (binary) logistic regression and the coefficients have the same interpretations. 
+
+
+### Overdispersion in binomial logistic regression
+
+As with Poisson regression, overdispersion can be an issue with binomial logistic regression as well. Often the variation is higher than $n_ip_i(1-p_i)$. 
+
+```{r}
+ddc$prob = predict(glm1, newdata=ddc, type='response')
+ddc$res  = ddc$y - ddc$n*ddc$prob
+ddc$z.res = ddc$res/sqrt(ddc$n*ddc$prob*(1-ddc$prob))
+hist(ddc$z.res, breaks=20)
+```
+
+That looks wider than a standard normal. As before, the overdispersion is estimated as 
+
+```{r}
+disp = sum(ddc$z.res^2)/(nrow(ddc)-2)
+disp
+```
+
+
+```{r}
+glm1 = glm(cbind(y, n-y) ~ county.house.value, data = ddc, family=binomial)
+glm2 = glm(cbind(y, n-y) ~ county.house.value, data = ddc, family=quasibinomial)
+summary(glm1)
+summary(glm2)
+```
+
+Note that the mean estimates are the same but the standard errors are now larger because overdispersion is being taken into account. 
+
+```{r}
+coefs = rbind(data.frame(summary(glm1)$coefficients[,1:2], model='Binomial'),
+              data.frame(summary(glm2)$coefficients[,1:2], model='Quasibinomial')) %>%
+  mutate(varname = rep(c('(Intercept)', 'county.house.value'),2)) %>%
+  rename(est = Estimate,
+         se = Std..Error) %>%
+  arrange(varname) %>%
+  remove_rownames() %>%
+  dplyr::select(varname, model, est, se) 
+coefs
+```
+
+
+### Comparison to binary logistic regression
+
+We will also fit a (binary) logistic regression model on the original data for comparison, using the same county-level median house value `county.house.value`  as the predictor (as opposed to tract-level `house.value`).
+
+```{r}
+glm1 = glm(cbind(y, n-y) ~ county.house.value, data = ddc, family=binomial)
+glm3 = glm(      y       ~ county.house.value, data =  dc, family=binomial)
+```
+
+Note that since we used the same predictor in both models, the by-county data used in `glm1` (one row per county) is basically a collapsed version of the by-tract data used in `glm3` (one row per tract). In this case, the coefficients and standard errors in both models are the same.
+
+```{r}
+coefs = rbind(data.frame(summary(glm1)$coefficients[,1:2], model='Binomial'),
+              data.frame(summary(glm3)$coefficients[,1:2], model='Binary')) %>%
+  mutate(varname = rep(c('(Intercept)', 'county.house.value'),2)) %>%
+  rename(est = Estimate,
+         se = Std..Error) %>%
+  arrange(varname) %>%
+  remove_rownames() %>%
+  dplyr::select(varname, model, est, se) 
+coefs
+```
+
+Since the coefficients are the same, the predictions are the same as well.
+
+```{r}
+rbind(head(predict(glm1, newdata = ddc, type='response')), 
+      head(predict(glm3, newdata = dc , type='response')))
+```
+
+The deviances are not the same, but the drop in deviance is the same for both models. 
+
+```{r}
+glm1$null.deviance - glm1$deviance
+glm3$null.deviance - glm3$deviance
+```
+
+We could look at the formulas for deviance to see why this makes sense, but we'll skip that. 
+
+So if we have the same predictors, then it doesn't matter whether we have all $n$ trials summarized in one row or if we have $n$ rows, one for each trial. 
+
+Of course, if we use tract-level information for `glm3`, we would get different results. 
+
+
