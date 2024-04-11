@@ -115,9 +115,10 @@ g = ggplot(dc,
   #                  y    = mean - var, 
   #                  yend = mean + var), 
   #              color = pubred)
+#g + lims(y = c(0, 100))
 
 g %>% 
-  pub(ylim = c(0, 100))
+  pub(ylim = c(0, 30))
 ```
 
 
@@ -220,6 +221,7 @@ The amount of over dispersion can be calculated as
 disp = sum(dc$z.res^2)/(nrow(dc)-2) 
 disp
 ```
+
 Anything over 1 would be overdispersion, anything under 1 would be underdispersion. There is quite a bit of overdispersion in this case.  
 
 Let's now fit a quasipoisson and Negative Binomial Regression model.  
@@ -336,7 +338,7 @@ set.seed(123)
 J=100
 
 ## Create a data frame to keep track of the coefficients and predictions
-boot.results = data.frame(j=1:J, coef=NA, lambdahat=NA)
+boot.results = data.frame(j=1:J, coef=NA, log.lambdahat=NA) 
 
 ## Create a data frame with one observation to make predictions
 dp = data.frame(log.house.value=12)
@@ -358,7 +360,7 @@ for(j in 1:J){
   
   ## Keep track of the coefficients
   boot.results[j, 'coef'] = m1$coef[2]
-  boot.results[j, 'lambdahat'] = predict(m1, newdata=dp, type='response')
+  boot.results[j, 'log.lambdahat'] = predict(m1, newdata=dp, type='link') 
   
   ## end loop over j
 }
@@ -379,7 +381,7 @@ Since the coefficients are different, the predictions are different
 
 ```{r}
 g = ggplot(boot.results, 
-       aes(x = lambdahat))+
+       aes(x = log.lambdahat))+
   geom_histogram()
 
 g %>% 
@@ -396,20 +398,27 @@ sd(boot.results$coef)
 Compare the bootstrapped standard error for lambda to the standard error given by the negative binomial regression model. 
 
 ```{r}
+## Poisson
+predict(glm1, 
+        newdata = dp, 
+        type = 'link', 
+        se.fit = T)$se.fit
+
+
 ## Quasipoisson
 predict(glm2, 
         newdata = dp, 
-        type = 'response', 
+        type = 'link', 
         se.fit = T)$se.fit
 
 ## Negative binomial
 predict(glm3, 
         newdata = dp, 
-        type = 'response', 
+        type = 'link', 
         se.fit = T)$se.fit
 
 ## Bootstrapped Poisson
-sd(boot.results$lambdahat) 
+sd(boot.results$log.lambdahat) 
 ```
 
 ## Zero-inflated Poisson
@@ -451,7 +460,7 @@ dc %>%
   pivot_longer(cols = -c(GEOID, lev2)) %>%
   mutate(err = value - lev2) %>%
   group_by(name) %>%
-  summarise(rmse = sqrt(mean(err^2)))
+  summarise(rmse = sqrt(mean(err^2, na.rm = T)))
 ```
 
 
