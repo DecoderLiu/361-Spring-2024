@@ -1,0 +1,163 @@
+---
+title: "PSET 6 - Quasipoisson, Neg Bin, Bin Log, Bootstrapping, CV, Ridge, Lasso"
+author: "S&DS 361"
+date: "Due 2024-04-16"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(pubtheme)
+library(MASS, exclude = 'select')
+library(GGally)
+library(leaflet)
+library(htmltools)
+
+```
+
+
+
+## Maps
+
+### 1. EV charging station locations
+
+```{r}
+d = readRDS('data/EVstations.rds')
+colnames(d) = tolower(colnames(d))
+
+d = d %>%
+  select(-matches('cng|lng|lpg|hydrogen|e85|bd[.]blends|french|^ng[.]|plus4|level1')) %>%
+  filter(fuel.type.code=='ELEC') %>%
+  rename(lev2=ev.level2.evse.num, 
+         lev3=ev.dc.fast.count, 
+         network = ev.network, 
+         lat = latitude, 
+         lon = longitude) %>%
+  mutate(status = case_when(status.code=='E' ~ 'avail', 
+                            status.code=='P' ~ 'planned', 
+                            status.code=='T' ~ 'temp.unavail', 
+                            TRUE ~ ''), 
+         lev2 = ifelse(is.na(lev2), 0, lev2), 
+         lev3 = ifelse(is.na(lev3), 0, lev3)) %>%
+  mutate(network = ifelse(network=='Tesla Destination', 'Tesla', network), 
+         network = gsub('Ã©', 'E', network), 
+         network = gsub('Ã‰', 'E', network))
+  
+```
+
+Plot the locations of Level 3 Charging Stations and this time make sure we can easily distinguish what network each charging station belongs to.  Consider the top 5 networks (Tesla, Electrify America, ChargePoint, eVgo, and Non-Networked)  separately and group all other networks together as "Other". 
+
+
+
+
+### 2. Animation
+
+Make a plot like above but facet by network, and animate it using `open.date` as the time variable.  Since there are ~1458 unique `open.dates`, we probably don't want one frame per date. So create a month column and use one frame per month. When a charging station appears, we want it to stay for the rest of the animation (not go away the next month). Upload your `gif` to Gradescope in the assignment denoted "GIF", and at the end of your code below, include a screenshot of the animation taken sometime halfway through the animation. Tip for knitting your PDF: as discussed in class, comment out your `animate` code after creating a `.gif` so that your document knits more quickly. 
+
+**Code**
+
+
+**Screenshot here**
+
+
+
+### 3. Interactive Plot
+
+Plot EV charging station locations on an interactive map with `leaflet`. Create labels that show the EV network, station name, street address, city, state, zip, and the number Level 2 and Level 3 charging stations. Size the dots by the number of chargers at that location. Since your computer might have issues showing all the points at once, plot just the locations in CT. 
+
+
+
+## Shiny
+
+### 4. Basic Shiny App
+Do the following to create a basic shiny app and publish it to shinyapps.io
+
+- Configure R Studio to communicate with shinyapps.io by following the directions from this page https://shiny.rstudio.com/articles/shinyapps.html up to and including the "Method 1" section. You will show you how to install `rsconnect`, create a shinyapps.io account, and set up communication between R Studio and shinyapps.io. Note that you will only have to do this once. 
+- Create a new shiny app like we did in class by clicking File, New File, Shiny Web App. Name the app `hw03app1`, choose Single File, choose an appropriate directory, and click Create. An `app.R` file will open in R Studio. 
+- Click Run App to see the app. The app should appear in the Viewer tab in R Studio, or in its own window.
+- In the upper right of the app, click Publish. Make sure the correct files and account are selected. Click Publish in the lower right. 
+
+Paste the url for your app here. The url will be of the form 
+https://yourusername.shinyapps.io/yourappname/
+
+**url here**
+
+
+### 5. Shiny App for EV Charging Stations
+
+Create a Shiny app that contains a leaflet map like in #3 and allows the user to select 
+
+- a state (default: CT)
+- a date range (default: 2015-01-01 to present)
+- a network (default: all networks), and 
+- Level 2 or Level 3 (default: Level 3) 
+
+and displays a leaflet plot of Level 2 or 3 EV charging stations for that `state`, for that `network`, and with an `open.date` in that date range. Note that you will have to copy the `EVstations.rds` file to the folder that contains the Shiny app. 
+
+Different types of user inputs can be found here https://shiny.rstudio.com/gallery/widget-gallery.html
+
+Publish your shiny app to shinyapps.io, and paste the url for your app here: 
+
+**url here**
+
+## Bootstrapping s.e. for $\hat{\lambda}$
+
+
+```{r}
+dc = readRDS('data/tracts.and.census.with.EV.stations.rds')
+dc = dc@data ## keep just the data frame, not the polygons
+
+dc = dc %>% 
+  
+  ## Change NAs to 0s, and 
+  ## since charging stations seem to come in pairs, create new columns
+  ## for pairs of charging stations
+  mutate(lev2 = ifelse(is.na(lev2), 0, lev2), 
+         lev3 = ifelse(is.na(lev3), 0, lev3), 
+         lev2pairs = round(lev2/2),
+         lev3pairs = round(lev3/2)) %>%
+  
+  ## Keep tracts with at least one charging station, 
+  ## and get rid of a couple of outliers
+  #filter((lev2!=0 | lev3!=0) & lev2<=50) %>%
+  mutate(log.house.value = log(house.value))
+
+```
+
+### 6. s.e. for $\hat{\lambda}$, all observations
+
+In class we found the bootstrap s.e. for $\hat{\lambda}$ when `log.house.value = 12`. Find the bootstrap s.e. for all values of `log.house.value` in the data. Hint: long format for a data frame is your friend. The s.e. for some values of `log.house.value` are small and some are large. Why?
+
+
+
+
+
+
+### 7. Compare s.e. with bootstrapped s.e.
+
+Plot $\hat{\lambda} + 2 \, s.e.$ and $\hat{\lambda} - 2 \, s.e.$ along with the curve for $\hat{\lambda}$, and $\pm 2 \,s.e.$ that you get from using `predict(glm1, newdata = dc, type = 'response', se.fit = T)` from the Poisson (`glm1`), Quasipoisson (`glm2`) and Negative binomial (`glm3`) models. Compare the results. 
+
+
+## Bootstrapping
+
+Suppose that we obtain a bootstrap sample from a set of $n$ observations. We will now show that the probability that the $j$th observation is part of a bootstrap sample is 0.632 for large enough $n$.
+
+### 8. 1st and 2nd observation are in the sample
+
+What is the probability that the 1st bootstrap observation is *not* the $j$th observation from the original sample?  The 2nd bootstrap observation?
+
+
+
+### 9. jth observation is not in the sample
+
+Argue that the probability that the $j$th observation is *not* in the bootstrap sample is $(1 - 1/n)^n$.
+
+
+
+### 10. jth observation is in the sample
+
+What is the probability that the $j$th observation *is* in the bootstrap sample? Find the limit of your answer as $n\rightarrow \infty$. Argue that for large enough $n$, the probability that the $j$th observation is in the bootstrap sample is around 0.632.
+
+
+
