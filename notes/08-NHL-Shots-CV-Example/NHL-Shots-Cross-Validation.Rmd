@@ -1,0 +1,80 @@
+---
+title: "NHL Shots - Cross Validation"
+author: "S&DS 361"
+date: "2024-04-16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+d = readRDS('data/nhl.shots.rds')
+d = d %>% filter(str == '5v5' &          ## 5-on-5 only
+                 !is.na(xcoord) &        ## remove shots with missing coordinates
+                 event != 'BLOCK')  %>%  ## remove blocks
+  select(goal, dist, abs.angle, 
+         shooter, goalie)
+```
+
+Let's create folds
+
+```{r}
+set.seed(123)
+k=5
+folds = rep(1:k, 
+            length.out = nrow(d))
+d$fold = sample(folds, 
+                nrow(d), 
+                replace = F)
+head(d)
+```
+
+```{r}
+metrics = data.frame(fold = 1:k, 
+                     dev1 = NA, 
+                     dev2 = NA, 
+                     logloss1 = NA, 
+                     logloss2 = NA)
+
+for (j in 1:k){
+  cat(j,'') ## print out the progress
+  
+  ## train and test rows
+  train.rows = d$fold != j
+  test.rows  = d$fold == j
+  
+  ## fit model on training data
+  m1 = glm(goal ~ dist             , data=d[train.rows,], family=binomial)
+  m2 = glm(goal ~ dist + abs.angle , data=d[train.rows,], family=binomial)
+  
+  ## keep track of adjusted R^2 for fun and training MSE just for fun
+  metrics[j, 'dev1'] = summary(m1)$deviance
+  metrics[j, 'dev2'] = summary(m2)$deviance
+  
+  ## make predictions
+  d$prob1[test.rows] = predict(m1, newdata=d[test.rows,], type='response')
+  d$prob2[test.rows] = predict(m2, newdata=d[test.rows,], type='response')
+  
+  ## Test logloss for each fold
+  metrics[j,'logloss1'] = -mean(d$goal[test.rows]*
+                                  log(d$prob1[test.rows]) +
+                                  (1-d$goal[test.rows])*
+                                  log(1-d$prob1[test.rows]))
+  metrics[j,'logloss2'] = -mean(d$goal[test.rows]*
+                                  log(d$prob2[test.rows]) +
+                                  (1-d$goal[test.rows])*
+                                  log(1-d$prob2[test.rows]))
+  
+}
+
+## compute CV MSE
+logloss1 = -mean(d$goal*log(d$prob1) + (1 - d$goal)*log(1 - d$prob1))
+logloss2 = -mean(d$goal*log(d$prob2) + (1 - d$goal)*log(1 - d$prob2))
+logloss1
+logloss2
+
+
+```
