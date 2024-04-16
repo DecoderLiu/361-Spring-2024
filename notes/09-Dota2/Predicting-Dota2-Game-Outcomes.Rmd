@@ -1,0 +1,586 @@
+---
+title: "Dota2"
+author: "S&DS 361"
+date: "2024-04-16"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(glmnet)
+library(tidyverse)
+library(plotly)
+library(pubtheme)
+library(pROC)
+library(corrplot)
+```
+
+## Introduction
+
+This data set has team data from the video game/e-sport DOTA2. 
+
+
+
+```{r}
+dd = readRDS('data/dota.team.data.by.game.rds') %>% 
+  ungroup()
+head(dd)
+```
+
+Each game has two rows, one for each team.  The columns have the data from that game.  
+
+- game = unique identifier for professional game
+- game.num = another unique identifier that goes from 1 to the number of games.
+- rd - indicates whether that team played as radiant or dire (kind of like home or away)
+- k = kills = Number of Kills (higher is better)
+- d = deaths = Number of deaths  (lower is better)
+- a = assists = Number of assists 
+- lh = la_Hits = number of last hits ( higher or lower is better)
+- dn = denies = number of denied creeps per player ( higher or lower is better)
+- st = **Not sure**
+- gpm = gold farmed per minute (higher is better)
+- xpm = experience gained per minute (higher is better)
+- lev level = Hero level at the end of the game (higher is better)
+- w = win = 1 if team won game, 0 if lost
+- str = combined strength of the characters/heros used by that team
+- agi = combined agility  of the characters/heros used by that team
+- int = combined intelligence of the characters/heros used by that team
+- tot = str + agi + int
+
+The columns with `.a` are what the team allowed in the game. For example, `gpm` is the gold per minute by the team, and `gpm.a` is the gold per minute by their opponent in that game. The columns with `.d` are "differential" statistics, computed by taken the team's total minus the opponents total. For example `gpm.d` is `gpm` minus `gpm.a`. 
+
+Note that Gold Farmed Per Minute Differential `gpm.d` is very closely associated with winning. 
+
+```{r}
+g = ggplot(dd, 
+           aes(x = gpm.d, 
+               y = w)) +
+  geom_jitter(alpha  = 0.3, 
+              height = 0.1, 
+              width  = 0) +
+  geom_smooth(method = 'glm', 
+              method.args = list(family='binomial'),
+              color = pubblue)
+
+g %>% pub()
+```
+
+
+```{r}
+m1 = glm(w ~ gpm.d, 
+         data = dd, 
+         family = binomial)
+summary(m1)
+```
+
+The residual deviance is WAY lower than the null deviance and the coefficient is highly significant so these seems like it would do a decent job of prediction. Let's find accuracy, AUC, and log loss. 
+
+```{r}
+dd$prob = predict(m1, newdata=dd, type='response')
+dd$class=0
+dd$class[dd$prob>0.5]=1
+accuracy = sum(dd$class==dd$w)/nrow(dd)
+roc.log = roc(dd$w, dd$prob)
+logloss = -mean(     dd$w  * log(    dd$prob + 1e-15) + 
+                (1 - dd$w) * log(1 - dd$prob + 1e-15))
+
+accuracy
+auc(roc.log)
+logloss
+```
+
+The accuracy and AUC are very close to 1, and the log loss is very close to 0. 
+
+We are going to use `gpm.d` as a more granular, continuous proxy for how well a team did in a game. We want to predict `gpm.d` from past results. 
+
+```{r}
+dd = dd %>%
+  select(game.num, team.id, rd,  
+         k.d, d.d, a.d, lh.d, 
+         dn.d, gpm.d, xpm.d, lev.d, w) %>%
+  arrange(team.id, game.num) %>%
+  group_by(team.id) %>%
+  mutate(rank = rank(game.num), 
+         even = ifelse(rank %% 2 == 0, TRUE, FALSE), 
+         pair = ceiling(rank/2)) %>%
+  ungroup()
+d1 = dd %>% filter(even==F)
+d2 = dd %>% filter(even==T) %>% select(team.id, pair, gpm.d, w)
+head(d1,2)
+
+d = d1 %>% 
+  left_join(d2, by=c('team.id', 'pair'), suffix=c('', '2')) %>%
+  filter(!is.na(gpm.d2)) %>%
+  mutate(rd = ifelse(rd=='radiant', 1, 0)) 
+head(d)
+```
+
+Note that many of the predictors are highly correlated. 
+
+```{r}
+corr = d %>% select(k.d, d.d, a.d, lh.d, dn.d,
+                    gpm.d, xpm.d, lev.d, w, 
+                    gpm.d2, w2) %>% 
+  cor() %>%
+  round(2)
+corr
+```
+
+```{R}
+corrplot(corr, order = 'FPC', diag=T, type = 'upper', tl.pos = 'tp')
+corrplot(corr, order = 'FPC', diag=F, type = 'lower', tl.pos =  'n',  
+         method='number', cl.pos = 'n', add=T)
+```
+
+Since there's a LOT of collinearity, let's try ridge and lasso. For ridge and lasso with `glmnet` we need to create separate `x` and `y`, and use `model.matrix` to convert categorical variables into dummy variables. 
+
+```{r}
+x=model.matrix(gpm.d2 ~ -1 + rd + gpm.d + xpm.d + 
+                 lev.d + k.d + a.d + lh.d + dn.d + d.d, 
+               data = d)
+y=d$gpm.d2
+r0   = glmnet(x=x, y=y, alpha=0)
+las0 = glmnet(x=x, y=y, alpha=1)
+```
+
+We can what information is in the model object. 
+```{r}
+names(r0)
+```
+
+One thing it has is a collection of lambdas
+
+```{r}
+r0$lambda
+```
+
+Those lambdas were automatically chosen by `glmnet`. 
+
+For a given lambda, We can check that `glmnet` gives coefficients that are similar to 
+
+$$\beta = (X^T X + \lambda I)^{-1}X^Ty$$
+However, we have to do some rescaling of lambda.
+
+```{r}
+lambda=100
+n = nrow(x)
+p = ncol(x)
+sy = sqrt(var(y)*(n-1)/n)
+beta = solve((t(x) %*% x + lambda*diag(p))) %*% t(x) %*% y
+
+r0 = glmnet(x, 
+            y, 
+            alpha = 0, 
+            lambda = lambda*sy/n, ## rescale lambda using sy and n
+            standardize = F, 
+            intercept = F, 
+            thresh = 1e-16)
+
+cbind(beta, coef(r0, exact = T)[-1])
+cbind(beta, coef(r0, exact = T)[-1]) %>% round(4)
+```
+
+Same up 4 digits.
+
+When we used `glmnet` we got a fit for several different lambdas. We need a way to choose the "best" lambda. Let's use cross validation to do model selection  via the function `cv.glmnet`.
+
+```{r}
+r1   = cv.glmnet(x = x, y = y, alpha = 0) 
+las1 = cv.glmnet(x = x, y = y, alpha = 1) 
+```
+
+Let's see what is in the model output
+
+```{r}
+names(r1)
+```
+
+Like `glmnet`, this has a vector of lambdas. 
+
+```{r}
+r1$lambda
+```
+
+Unlike `glmnet`, `cv.glmnet` gives a vector of CV MSE associated with each lambda. 
+
+```{r}
+r1$cvm
+```
+
+It also has the lambda associated with the smallest CV MSE. 
+
+```{r}
+r1$lambda.min
+```
+
+We can find the minimum MSE like this. We'll show RMSE instead since that's a little easier to interpret.
+
+```{r}
+rmse.r1   = sqrt(  r1$cvm[  r1$lambda==  r1$lambda.min])
+rmse.las1 = sqrt(las1$cvm[las1$lambda==las1$lambda.min])
+rmse.r1
+rmse.las1
+```
+
+If you don't supply the `lambda` argument, `glmnet` automatically chooses 100 lambdas by default. You can change the number of lambdas using `nlambda` or specify your own lambdas using `lambda`. 
+
+```{r}
+lambdas = 10^seq(-3, 3, by=.1)
+r1a = cv.glmnet(x = x, y = y, alpha = 0, lambda = lambdas)
+r1a$lambda.min
+plot(r1a)
+```
+
+Note that we could have coded up this cross-validation manually creating a `d$fold` column as before, writing a for loop, and using `glmnet`. In order to check our manual version matches `cv.glmnet`, we would have to supply the `foldid = d$fold` argument to `cv.glmnet` so that `cv.glmnet` uses the same fold number for each observation.  By default, `cv.glmnet` randomly assigns observations to folds. Supplying `foldid` will override that default. 
+
+Here are the coefficients for best lambda. 
+
+```{r} 
+coef(r1  , s=  r1$lambda.min)
+coef(r1  , s=  r1$lambda.1se)
+coef(las1, s=las1$lambda.min)
+coef(las1, s=las1$lambda.1se)
+```
+
+The lambda with the minimum CV RMSE is `lambda.min`, and `lambda.1se` is the highest lambda such that the CV MSE is within 1 standard error of the minimum CV MSE. Note that `lambda.1se` is the default if you don't supply `s`. 
+
+```{r}
+cbind(coef(r1)  , coef(r1  , s=  r1$lambda.1se))
+cbind(coef(las1), coef(las1, s=las1$lambda.1se))
+```
+
+The authors recommend using `lambda.1se` since it leads to a simpler model. In practice, I have used both in different situations, and have also chosen lambda using other methods, which we'll discuss later.
+
+Find the coefficients for each value of lambda.
+
+```{r} 
+coefs.r1   = coef(r1  , s=  r1$lambda)
+coefs.las1 = coef(las1, s=las1$lambda)
+colnames(coefs.r1  ) = paste0('lambda', round(  r1$lambda,5))
+colnames(coefs.las1) = paste0('lambda', round(las1$lambda,5))
+
+## Reorganize the coefs data to prepare for ggplot.
+coefs.r1   = coefs.r1   %>% 
+  as.matrix() %>% 
+  as.data.frame() %>% 
+  rownames_to_column() %>% 
+  pivot_longer(cols=-rowname)%>%
+  mutate(model='Ridge')
+
+coefs.las1 = coefs.las1 %>% 
+  as.matrix() %>% 
+  as.data.frame() %>% 
+  rownames_to_column() %>% 
+  pivot_longer(cols=-rowname) %>%
+  mutate(model='Lasso')
+
+coefs1 = bind_rows(coefs.r1, coefs.las1) %>%
+  mutate(name = as.numeric(gsub('lambda', '', name))) %>%
+  filter(rowname!='(Intercept)') %>%
+  rename(lambda=name, 
+         var = rowname)
+head(coefs1)
+```
+
+Plot the coefficients as a function of lambda.
+
+```{r fig.width=5, fig.height=6}
+lambda.lines = data.frame(model=c('Ridge', 'Lasso'), 
+                          lambda.min = c(r1$lambda.min, las1$lambda.min), 
+                          lambda.1se = c(r1$lambda.1se, las1$lambda.1se))
+dg = coefs1 %>% filter(var!='rdradiant', 
+                       var!='rddire', 
+                       var!='rd') ## remove 
+g= ggplot(data=dg, aes(x=lambda, y=value, group=var, color=var))+
+  geom_line(alpha=1, linewidth=1)+
+  facet_wrap(~model, ncol=1, scales='free_y')+
+  geom_vline(data=lambda.lines, aes(xintercept=lambda.min))+
+  geom_vline(data=lambda.lines, aes(xintercept=lambda.1se), 
+             color = pubmediumgray)+
+  scale_x_log10()+
+  geom_hline(yintercept = 0)+
+  scale_color_manual(values=cb.pal)
+g
+```
+
+## Other ways to choose lambda
+
+Cross validation seems like the "best" way to choose lambda since it uses data instead of requiring a subjective decision (except possibly deciding between `lambda.min` and `lambda.1se`. In practice this often works but can sometimes lead to undesirable results, like coefficients that are much smaller than expected (the lasso above with lambda.1se has only an intercept and `gpm.d` remaining in the model), or coefficients that still don't have the expected sign. It may be desired to increase or decrease lambda, sacrificing some performance in terms of CV MSE in order to gain some other benefit. If the CV MSE doesn't increase much for small changes in lambda, then it might be worth it to us.  Trace curves and variance inflation factors are two things that can help us do this. 
+
+### Trace curves
+
+We can inspect the plot of the trace curves and choose a lambda that, for example, is near lambda.min or lambda.1se, but where the coefficients have the expected sign. In our plot of ridge regression trace curves above, assists have a negative coefficient. We could choose to increase lambda to the red line below where the coefficient is positive. 
+
+```{r}
+new.lambda = data.frame(model = 'Ridge', x = 3000)
+dg2 = dg %>% filter(model == 'Ridge')
+g = ggplot(data = dg2, 
+           aes(x = lambda, 
+               y = value, 
+               group = var, 
+               color = var)) +
+  geom_line(alpha = 1, 
+            linewidth = 1) +
+  geom_vline(data = lambda.lines, aes(xintercept = lambda.min)) +
+  geom_vline(data = lambda.lines, aes(xintercept = lambda.1se), 
+             color = pubmediumgray) +
+  geom_vline(data = new.lambda,
+             aes(xintercept = x), 
+             color = pubred) +
+  scale_x_log10() +
+  geom_hline(yintercept = 0) +
+  scale_color_manual(values = cb.pal) + 
+  lims(y = c(-2, 2))
+
+g 
+
+
+```
+
+We can check the difference in CV MSE. 
+
+```{r}
+sqrt(r1$cvm[r1$lambda==r1$lambda.min])
+sqrt(r1$cvm[r1$lambda==r1$lambda.1se])
+sqrt(r1$cvm[which.min(abs(r1$lambda-3000))])
+
+```
+
+Whether or not we choose this lambda depends on how badly we want the coefficient to be positive, and how much we care that our RMSE increases by 5. 
+
+## Variance Inflation Factors (BETA)
+
+(I'm calling this a Beta because I did this quickly and didn't check my work. )
+
+VIF are a way to measure collinearity among the predictors in a regression. 
+
+```{r}
+cor.x = cor(x,x) %>% as.matrix()
+VIF = diag(solve(cor.x))
+sort(VIF)
+```
+
+Not surprisingly, `k.d` and `d.d` have the highest VIFs. We identified previously that they are very highly correlated. We can check VIF for various lambdas. 
+
+```{r}
+## Initialize some data frames
+df = data.frame(lambda = r1$lambda, 
+                maxVIF = NA)
+cor.x.df = NULL
+vif.df = NULL
+
+## Loop over lambda and compute X^tX and VIF 
+for (lambda in r1$lambda){
+  rescaled.lambda = lambda/(sy/n)
+  xstar = rbind(x, rescaled.lambda*diag(p))
+  cor.x = cor(xstar,xstar) %>% as.matrix()
+  VIF = diag(solve(cor.x))
+  df$maxVIF[df$lambda==lambda] = max(VIF)
+  
+  ## Keep track of VIF
+  temp = data.frame(VIF) %>%
+    rownames_to_column() %>%
+    mutate(lambda = lambda, 
+           type = 'vif') %>%
+    rename(var = rowname, 
+           value = VIF)
+  vif.df = rbind(vif.df, temp)
+  
+  ## Keep track of correlation matrix for each lambda
+  temp = data.frame(cor.x) %>%
+    rownames_to_column() %>%
+    pivot_longer(cols=-rowname) %>%
+    filter(rowname %in% colnames(x)) %>%
+    mutate(lambda = lambda, 
+           type = 'cor') %>%
+    rename(var = rowname)
+  cor.x.df = rbind(cor.x.df, temp)
+}
+df %>% arrange(desc(maxVIF)) %>% head()
+```
+
+We can see that as lambda increases, the maxVIF decreases.
+
+```{r}
+g= ggplot(data=df, aes(x=lambda, y=maxVIF))+
+  geom_line(alpha=1, linewidth=1)+
+  geom_vline(data = lambda.lines %>% filter(model=='Ridge'), 
+             aes(xintercept = lambda.min), 
+             color = pubblue) +
+  geom_vline(data = lambda.lines %>% filter(model=='Ridge'), 
+             aes(xintercept = lambda.1se), 
+             color = pubmediumgray) +
+   geom_vline(data = new.lambda,
+               aes(xintercept = x), 
+               color = pubred) +
+  scale_x_log10() +
+  geom_hline(yintercept = 0) +
+  scale_color_manual(values = cb.pal)
+g
+```
+
+
+At `lambda.min`, the max VIF is still very high, so we might not prefer that choice of `lambda`. At `lambda.1se`, the VIF is below 10, and at lambda=3000 it is around 2-3. We could choose to look at VIF, along with CV MSE and trace curves to decide our lambda. 
+
+The downside of using trace curves and VIF is that they are manual, which could cause difficulties if you are building several models or are performing 5-fold cross-validation where a new lambda needs to be chosen each time through the loop. 
+
+Here we show the coefficients and the VIF for each variable. 
+
+```{r}
+dg3 = dg2 %>% select(-model) %>%
+  mutate(type = "Coef") %>%
+  bind_rows(vif.df) %>%
+  filter(value <= 10)
+
+g = ggplot(dg3, 
+           aes(x = lambda, 
+               y = value, 
+               color = var)) + 
+   geom_line(alpha = 1, 
+            linewidth = 1) +
+  geom_vline(data = lambda.lines, aes(xintercept = lambda.min)) +
+  geom_vline(data = lambda.lines, aes(xintercept = lambda.1se), 
+             color = pubmediumgray) +
+  geom_vline(data = new.lambda,
+             aes(xintercept = x), 
+             color = pubred) +
+  geom_hline(yintercept = 0) + 
+  facet_wrap(~type, 
+             ncol = 1, 
+             scales = 'free_y') + 
+  scale_x_log10() +
+  scale_color_manual(values = cb.pal) 
+
+g
+
+```
+
+
+## OLS vs ridge vs lasso
+
+If we want to compare with (non-regularized) linear regression, aka OLS, we can do out of sample testing.
+
+## OOS Testing
+Let's split data into training and testing. 
+
+```{r}
+set.seed(123)
+train.rows = sample(1:nrow(d), size=0.8*nrow(d))
+test.rows  = which(!1:nrow(d) %in% train.rows)
+d.train = d[train.rows,]
+d.test  = d[test.rows ,]
+```
+
+For ridge and lasso we need to create separate x and y, and use `model.matrix` to convert categorical variables into dummy variables. 
+
+```{r}
+x.train = x[train.rows,]
+x.test  = x[ test.rows,]
+y.train = y[train.rows]
+y.test  = y[ test.rows]
+```
+
+Using only the training set, let's fit models
+
+```{r}
+lm.train  = lm(gpm.d2 ~ rd + gpm.d + xpm.d + lev.d + 
+                 k.d + a.d + lh.d + dn.d + d.d, 
+               data = d.train)
+r.train   = cv.glmnet(x = x.train, y = y.train, alpha = 0, standardize = T)
+las.train = cv.glmnet(x = x.train, y = y.train, alpha = 1, standardize = T)
+```
+
+Let's look at the performance of these models on the test data.  First, we'll make predictions. 
+
+```{r}
+d.test$lm = predict(lm.train , newdata = d.test)
+d.test$r  = predict(r.train  , newx    = x.test)
+d.test$las= predict(las.train, newx    = x.test)
+
+d.test %>% select(gpm.d, gpm.d2, lm, r, las) %>% head()
+```
+
+Similar to above, note that the default lambda is `lambda.1se`, not `lambda.min`. If we want lambda.min, we have to specify it. 
+
+```{r}
+d.test$r.min  = predict(r.train  , s =   r.train$lambda.min, newx=x.test)
+d.test$las.min= predict(las.train, s = las.train$lambda.min, newx=x.test)
+d.test %>% select(gpm.d, gpm.d2, lm, r, las, r.min, las.min) %>% head()
+```
+
+Now we'll compute RMSE. 
+
+```{r}
+sqrt(mean((d.test$lm      - d.test$gpm.d2)^2))
+sqrt(mean((d.test$r       - d.test$gpm.d2)^2))
+sqrt(mean((d.test$las     - d.test$gpm.d2)^2))
+sqrt(mean((d.test$r.min   - d.test$gpm.d2)^2))
+sqrt(mean((d.test$las.min - d.test$gpm.d2)^2))
+```
+They are all really close, but `las.min` is lowest. For our final model we could choose `las1` from above (which uses all the data) and choosing `las.train$lambda.min`.
+
+```{r}
+coef(las1, s=las.train$lambda.min)
+```
+
+
+## Cross-validation
+
+Instead of OOS testing we can do cross-validation. To do the fairest comparison, we use the same data in each fold for all models. 
+
+```{r}
+set.seed(123)
+k=5
+folds = rep(1:k, length.out=nrow(d))
+d$fold = sample(folds, nrow(d), replace=F)
+head(d)
+```
+
+
+```{r}
+k=5
+d[, c('lm', 'r', 'las', 'r.min', 'las.min')]=NA
+for(j in 1:k){
+  cat(j, '')
+  
+  train.rows  = d$fold!=j
+  test.rows   = d$fold==j
+  lm.train  = lm(gpm.d2 ~ rd + gpm.d + xpm.d + lev.d + 
+           k.d + a.d + lh.d + dn.d + d.d , 
+         data=d[train.rows,])
+  
+  r.train   = cv.glmnet(x=x[train.rows,], y=y[train.rows], alpha=0, standardize=T)
+  las.train = cv.glmnet(x=x[train.rows,], y=y[train.rows], alpha=1, standardize=T)
+  
+     d$lm[test.rows] = predict( lm.train, newdata=d[test.rows,])
+      d$r[test.rows] = predict(  r.train, newx = x[test.rows,])
+    d$las[test.rows] = predict(las.train, newx = x[test.rows,])
+  d$r.min[test.rows] = predict(  r.train, newx = x[test.rows,], s =   r.train$lambda.min)
+d$las.min[test.rows] = predict(las.train, newx = x[test.rows,], s = las.train$lambda.min)
+} ## end loop over k
+
+d %>% select(gpm.d, gpm.d2, lm, r, las, r.min, las.min)
+
+```
+
+## compute CV MSE
+```{r}
+sqrt(mean((d$lm      - d$gpm.d2)^2))
+sqrt(mean((d$r       - d$gpm.d2)^2))
+sqrt(mean((d$las     - d$gpm.d2)^2))
+sqrt(mean((d$r.min   - d$gpm.d2)^2))
+sqrt(mean((d$las.min - d$gpm.d2)^2))
+```
+
+The lowest RMSE is las.min, but that, r.min and lm are all really close. 
+
+Note that within each iteration of the for loop for cross validation (for each j), lambda must be chosen for ridge and lasso. So another cross validation is being performed on the training data to choose lambda for that iteration of the ridge and lasso models. 
+
+It doesn't seem like regularization is helping improve RMSE much, but we might prefer the coefficients using lasso or ridge because of their magnitude or sign, we might prefer the lasso model because it is a simpler model, or we might prefer lambda.1se because it is an even simpler model with only two predictors. 
+
+
+```{r}
+coef(las1, s = las1$lambda.1se)
+```
+
