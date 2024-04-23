@@ -64,6 +64,26 @@ d = d %>%
 Data exploration: 
 
 ```{r}
+# groupby the flights by flight and time
+library(ggmap)
+library(ggplot2)
+# create a map using the latitude and longitude using ggmap
+mapWorld <- borders("world")
+mp <- ggplot() + mapWorld
+
+d = d %>%
+  group_by(flight) 
+mp + geom_point(data = d, aes(x = lon, y = lat, color = flight), size = 0.5) + 
+  theme_minimal() + 
+  theme(legend.position = "none") + 
+  coord_fixed(1.3) + 
+  labs(title = "Aircraft locations", x = "Longitude", y = "Latitude")
+```
+
+```{r}
+```
+
+```{r}
 
 ```
 

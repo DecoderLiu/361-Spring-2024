@@ -79,6 +79,33 @@ summary(lm1)
 
 Consider only one predictor `avg.score.prev` and outcome `score`. Perform some data exploration and visualization to determine whether linear regression assumptions or Poisson regression assumptions appear to be met more closely. (Feel free to copy/paste code that we've done previously.)
 
+```{r}
+ddd = dd %>%
+  mutate(bin = cut(avg.score.prev, 
+                   breaks = seq(0, 120, 5))) %>%
+  group_by(bin) %>%
+  summarise(mean.score = mean(score), 
+            var.score = var(score))
+```
+
+```{r}
+
+## create bins and plot the mean and variance of g
+
+### plot the jitter points in the same plot
+
+ggplot(dd, aes(x = avg.score.prev, y = score)) +
+  geom_point(alpha = 0.05) +
+  geom_errorbar(data = ddd, 
+                aes(x = as.numeric(bin), 
+                    ymin = mean.score - sqrt(var.score), 
+                    ymax = mean.score + sqrt(var.score)), 
+                width = 1) 
+
+
+```
+
+
 
 ## 2. Poisson Regression 
 

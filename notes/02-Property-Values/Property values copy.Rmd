@@ -1,0 +1,88 @@
+---
+title: "Midterm Part 2"
+author: "Langchen Liu"
+date: "2024-02-20"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(pubtheme)
+d = read.csv('data/branford.csv')
+d = d %>% 
+  select(pid, value, land, living, beds, baths,
+         good, style, grade, ac, miles_to_coastline)
+head(d,2)
+```
+There is one row per property, each with one single family home, and the columns have the following meanings:
+
+- `value`: the assessed value of the proper
+
+```{r}
+## build several linear models to predict the log(value) using the other variables, compare the models
+## and choose the best one
+
+## first refacroring the grade variable
+d$grade = factor(d$grade, levels = c('A ++', 'A +', 'A', 'B +', 'B', 'B -', 'C +', 'C', 'C -', 'D +', 'D'))
+# let's see what styles the dataset have
+d$style %>% table()
+
+
+```
+```{r}
+# exculde the mobile homes
+d = d %>% filter(style != 'Mobile Home')
+d$style = factor(d$style)
+```
+```{r}
+# do the same for ac
+d$ac = factor(d$ac)
+```
+
+
+We start building linear models to predict the log of the value of the property using the other variables. We will compare the models and choose the best one.
+
+
+
+
+```{r}
+# first check all numerical variables
+lm1 = lm(log(value) ~ land, data = d)
+lm2 = lm(log(value) ~ land + living, data = d)
+lm3 = lm(log(value) ~ land + living + beds + baths, data = d)
+lm4 = lm(log(value) ~ land + living + beds + baths + good, data = d)
+lm5 = lm(log(value) ~ land + living + beds + baths + good + miles_to_coastline, data = d)
+summary(lm1)
+summary(lm2)
+summary(lm3)
+summary(lm4)
+summary(lm5)
+
+```
+From the very first observation, `beds` and `land` seems to be less important. Let's discard land and create a variable bed+bath
+```{r}
+d$bed_bath = d$beds + d$baths
+lm6 = lm(log(value) ~ living + good + bed_bath + miles_to_coastline, data = d)
+summary(lm6)
+```
+Note that lm6 has the highest R-squared value, so we will use it as our model. 
+
+As a conclusion, I choose `log(value)` to be the dependent variable, and `living`, `good`, `bed_bath`, and `miles_to_coastline` to be the independent variables. The reason I choose them is because they are all numerical values and are all significant in the linear model.
+
+
+Let's check on the linear model assumptions
+
+```{r} 
+par(mfrow=c(2,2))
+plot(lm6)
+```
+From the plot, the Q-Q residuals plot is not perfectly normal, but it is close enough. So we can say that the normality assumption is satisfied. The residuals vs fitted plot looks not good, the relationship may not be linear. So the linearity assumption might not be perfectly satisfied. But we are okay with this. The indepedence assumption is fine. The constant variance assumption fails as I cannot tell the residuals have constant variance. 
+
+```{r}
+

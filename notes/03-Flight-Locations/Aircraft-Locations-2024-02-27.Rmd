@@ -207,13 +207,14 @@ g = ggplot(dg,
                y = lat,
                
                ## which points belong to the same flight
-                      
+               group = key,
                color = zone)) +
   borders('usa',                    
           colour = publightgray) +
   
-  ## use geom_path, as opposed to geom_line
-
+  ## use geom_path, as opposed to geom_line, parametric
+  geom_path(alpha = 0.1,
+             show.legend = F) +
   
   labs(title = title)
 
@@ -271,6 +272,10 @@ Now animate using the function `transition_states`, and use `time` that says wha
 ```{r}
 gg = g %>%
   pub(type = 'map') + 
+  transition_states(states = time, 
+                    transition_length = 1, 
+                    state_length = 0, 
+                    wrap = F)
    
   
   
@@ -286,8 +291,8 @@ g = ggplot(dg,
                color = zone,
                
                ## determine which points belong to same flight
-               
-               ))+
+               group = key)
+               )+
   borders('state', 
           colour = publightgray)+
   geom_point(size = 1, 
@@ -340,14 +345,14 @@ gg = g %>%
                        ## and fade out when they leave (land, or leave screen)
 
 # ## other animation settings
-# a1 = animate(gg, 
-#         width   = 720, 
-#         height  = 720/1.5, 
-#         fps     = 24, 
-#         nframes = 24*10*4, 
-#         start_pause = 5, 
-#         end_pause   = 5)
-# a1
+a1 = animate(gg,
+        width   = 720,
+        height  = 720/1.5,
+        fps     = 24,
+        nframes = 24*10*4,
+        start_pause = 5,
+        end_pause   = 5)
+a1
 # 
 # ## save animation
 # anim_save(a1, filename = 'img/flight-locations.gif')

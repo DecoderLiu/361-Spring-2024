@@ -1,0 +1,153 @@
+---
+title: "Midterm2"
+author: "Langchen Liu"
+date: "2024-04-02"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(pubtheme)
+library(corrplot)
+library(GGally)
+library(pROC)
+library(caret)
+```
+
+## Load Data and pre-processing
+
+```{r}
+load('data/labeled_points.Rdata')
+
+labeled = labeled %>% 
+  select(ID, landcover)
+
+d = labeled_train %>%
+  left_join(labeled, by = 'ID')
+
+d = d %>%
+  mutate(veg = ifelse(landcover %in% c('natforest', 'orchard', 'cropland'), 
+                      1, 0), 
+         NDVI100 = NDVI * 100)
+head(d,2)
+```
+
+
+```{r}
+dm = d %>%
+  group_by(ID) %>%
+  summarise(
+    mean.NDVI100 = mean(NDVI100, na.rm = T),
+    landcover = unique(landcover),
+    veg = unique(veg)) %>%
+  as.data.frame()
+head(dm,2)
+```
+
+## Fit a logistic model
+
+```{r}
+m1 = glm(veg ~ mean.NDVI100, 
+        data = dm, 
+        family = binomial(link = logit))
+summary(m1)
+```
+
+
+## a. Data exploration
+
+Find another predictor involving NDVI (other than mean(NDVI100)) that might be useful in predicting vegetation. 
+
+**I might begin with variance(NDVI100)**
+
+```{r}
+
+dm = d %>%
+  group_by(ID) %>%
+  summarise(
+    mean.NDVI100 = mean(NDVI100, na.rm = T),
+    var.NDVI100 = var(NDVI100, na.rm = T),
+    landcover = unique(landcover),
+    veg = unique(veg)) %>%
+  as.data.frame()
+
+### plot the variance and make a smooth curve
+
+ggplot(dm, aes(x = var.NDVI100, y = veg)) +
+  geom_point() + 
+  geom_smooth(method = 'glm', 
+              method.args = list(family = 'binomial')) +
+  labs(title = 'Variance of NDVI100 vs. Vegetation')
+
+```
+**From the plot, we can see that the variance of NDVI100 is a good predictor of vegetation. The reason is veg = 0 is most likely to have a smaller variance in NDVI100, while the veg = 1 points have a significantly greater variance in NDVI100.**
+
+
+## b. Fit a logistic model
+
+```{r}
+
+m2 = glm(veg ~ var.NDVI100 + mean.NDVI100,
+        data = dm,
+        family = binomial(link = logit))
+
+summary(m2)
+
+```
+
+```{r}
+## predict and compare the accuracy
+
+dm$predm2 = predict(m2, type = 'response')
+dm$predm2 = ifelse(dm$predm2 > 0.5, 1, 0)
+
+
+dm$predm1 = predict(m1, type = 'response')
+dm$predm1 = ifelse(dm$predm1 > 0.5, 1, 0)
+
+cat('Accuracy of m1:', mean(dm$predm1 == dm$veg), '\n')
+cat('Accuracy of m2:', mean(dm$predm2 == dm$veg), '\n')
+
+```
+
+```{r}
+## ROC curve
+
+roc1 = roc(dm$veg, dm$predm1)
+roc2 = roc(dm$veg, dm$predm2)
+
+roc1 = roc1 %>% coords()
+roc2 = roc2 %>% coords()
+
+ggplot() +
+  geom_line(data = roc1, aes(x = 1 - specificity, y = sensitivity), color = 'red') +
+  geom_line(data = roc2, aes(x = 1 - specificity, y = sensitivity), color = 'blue') +
+  labs(title = 'ROC curve of m1 and m2') 
+```
+
+
+**We can see that the new predictor (var.NDVI100) significantly improves the previous model.**
+
+**First, the intercept and the coefficients of the new model has a good significant level, while the intercept of the previous model is not as significant.** 
+
+
+**Second, both model share the same null deviance but the new model has a much smaller residual deviance, this means that the new model has a greater difference in residual and null deviance, which means the new model explains the statistical relationship of the predictors and the response variables better.**
+
+**Third, the AIC of the new model is smaller than the previous model, which means the new model has a better fit.**
+
+**Fourth, the accuracy of the new model (0.96) is higher than the previous model (0.945).**
+
+**Fifth, the ROC curve of the new model is closer to the top-left corner, which means the new model has a better performance.**
+
+
+**As a result, the new model is better than the previous model. I will recommend adding this new predictor (var.NDVI100) to the model.**
+
+
+
+
+
+
+

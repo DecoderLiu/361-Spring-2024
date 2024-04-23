@@ -83,6 +83,25 @@ d = d %>%
 
 It will likely be helpful to perform data exploration and visualization to determine which bands vary the most among landcover types, which bands are relatively similar across landcover types, and to detect other potential trends in the data. Let's start by focusing on `veg` and exploring the relationship between `veg` and the band values. 
 
+```{r}
+## use ggmap to visualize the data, plot whether a location is veg or not veg in the map
+library(ggmap)
+
+d %>%
+  filter(!is.na(lat), !is.na(lon))
+mp = borders('world')
+mp <-  ggplot() + mp
+mp + 
+  geom_point(d,  mapping = aes(x = lon, y = lat, color = veg), size = 1) +
+  theme_minimal()
+```
+
+```{r}
+
+```
+
+```{r}
+```
 
 
 ## Vegetation classification

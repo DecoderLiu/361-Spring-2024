@@ -79,6 +79,7 @@ d = d %>%
                       1, 0), 
          builtup = ifelse(landcover == 'builtup', 1, 0), 
          EVI = ifelse(is.infinite(EVI), NA, EVI))
+head(d)
 ```
 
 ## Vegetation and band values
@@ -386,7 +387,7 @@ We can bin our data using the function `cut_interval`.
 dm = dm %>%
   mutate(bin = cut_interval(NDVI, 
                             length = 0.05))
-head(dd)
+head(dm)
 ```
 
 Let's check the counts of `veg` in each bin. 

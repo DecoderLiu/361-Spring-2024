@@ -2,17 +2,21 @@
 title: "PSET 03 - Linear Regression"
 author: "S&DS 361"
 output: pdf_document
+header-includes: 
+- \usepackage{placeins}
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(pubtheme)
 library(leaflet)
 library(htmltools)
 library(sp)
+knitr::opts_chunk$set(echo = TRUE)
 ```
 
+
+\FloatBarrier
 ## Part 1: Property values
 
 The following data set contains information about properties in Branford, CT. Each row is a property, and the columns contain information about that property.
@@ -29,50 +33,102 @@ head(b,2)
 ```
 
 The column `value` indicates the assessed value of that property. The column `living` indicates the square feet of the living area of the property, `beds` is the number of bedrooms, `baths` is the number of full bathrooms, and `halfbaths` is the number of half bathrooms.
+\FloatBarrier
+#### 1. Fit a linear regression model using `log(value)` as the outcome and `living` as a predictor, and another model with `log(living)` as a predictor. Which model do you think is better? Why?
 
-#### 1. Fit a linear regression model using `log(value)` as the outcome and `living` as a predictor, and another model with `log(living)` as a predictor.  Which model do you think is better? Why?
+```{r}
+lm1 = lm(log(value) ~ living, data=b)
+lm2 = lm(log(value) ~ log(living), data=b)
+summary(lm1)
+summary(lm2)
+```
 
-
-
+From the above results, the first model is better because it has a higher R-squared value (0.55) compared to the second model (0.52). It is rather hard to say the first model is definitely better than the second because the R-squared values are so close.
+\FloatBarrier
 #### 2. Try adding `beds`, `baths`, and `halfbaths` as predictors to the model above. Do those predictors improve the model? Why or why not?
 
+```{r}
+lm3 = lm(log(value) ~ living + beds + baths + halfbaths, data=b)
+summary(lm3)
+```
 
+The R-squared value of the model with `living`, `beds`, `baths`, and `halfbaths` as predictors is 0.56, which is only slightly higher than the R-squared value of the model with only `living` as a predictor. This suggests that the predictors `beds`, `baths`, and `halfbaths` do not improve the model. This is likely because the predictors are not linearly related to the outcome, and the model is not linear.
+\FloatBarrier
+#### 3. Create a column `baths2` that is the sum of `baths` and 0.5\*`halfbaths`. Fit a linear regression model with `living` and `beds` as before, but use `baths2` instead of `baths` and `halfbaths`. Is this model better, worse or similar? Why?
 
-#### 3. Create a column `baths2` that is the sum of `baths` and 0.5*`halfbaths`. Fit a linear regression model with `living` and `beds` as before, but use `baths2` instead of `baths` and `halfbaths`. Is this model better, worse or similar? Why?
+```{r}
+b = b %>% mutate(baths2 = baths + 0.5*halfbaths)
+lm4 = lm(log(value) ~ living + beds + baths2, data=b)
+summary(lm4)
+```
 
-
-
+The R-squared value of the model with `living`, `beds`, and `baths2` as predictors is 0.56, which is the same as the R-squared value of the model with `living`, `beds`, and `baths` as predictors. This suggests that the model with `baths2` is not better than the model with `baths` and `halfbaths` as predictors. The two models have a similar performance.
+\FloatBarrier
 #### 4. Plot `log(value)` vs `log(miles_to_coastline)`. Does this relationship look more linear than `log(value)` vs `miles_to_coastline`?
 
+```{r}
+ggplot(b, aes(x=log(miles_to_coastline), y=log(value))) + 
+  geom_point(shape = 1, color = 'black') +
+  geom_smooth(method = 'lm', formula = y ~ x, se = F, color = 'red')
+
+ggplot(b, aes(x=miles_to_coastline, y=log(value))) + 
+  geom_point(shape = 1, color = 'black') +
+  geom_smooth(method = 'lm', formula = y ~ x, se = F, color = 'red') 
 
 
+```
+
+The relationship between `log(value)` and `log(miles_to_coastline)` looks more linear than the relationship between `log(value)` and `miles_to_coastline`. This is because the scatter plot of `log(value)` vs `log(miles_to_coastline)` has a more linear shape than the scatter plot of `log(value)` vs `miles_to_coastline`.
+\FloatBarrier
 #### 5. Fit a model like your model above but with `miles_to_coastline` as an additional predictor, and one like your model above but with `log(miles_to_coastline)` as an additional predictor. Which model is better? Why or why not? Explain what you mean by "better".
 
+```{r}
+lm5 = lm(log(value) ~ living + beds + baths2 + miles_to_coastline, data=b)
+lm6 = lm(log(value) ~ living + beds + baths2 + log(miles_to_coastline), data=b)
+summary(lm5)
+summary(lm6)
 
+```
 
-
-
+The R-squared value of the model with `living`, `beds`, `baths2`, and `miles_to_coastline` as predictors is 0.61, which is lower than the R-squared value of the model with `living`, `beds`, `baths2`, and `log(miles_to_coastline)` as predictors (0.69). This suggests that the model with `log(miles_to_coastline)` as a predictor is better than the model with `miles_to_coastline` as a predictor. By adding the `log(miles_to_coastline)` as a predictor, the model is able to explain more of the variation in the outcome. It also makes every one the of the predictors to be statistically significant, which is not the case for previous linear models.
+\FloatBarrier
 ## Part 2: Census Data
 
-The following data set contains information from the US Census. Each row is a census tract, and the columns contain information about that census tract. 
+The following data set contains information from the US Census. Each row is a census tract, and the columns contain information about that census tract.
 
 ```{r}
 census = readRDS('data/tracts.and.census.with.EV.stations.rds')
 census = census[census$state=='CT',]
 df = census@data ## just the data frame, without the polygons
+head(df,2)
+```
+\FloatBarrier
+#### 6. Build a simple linear regression model that describes the relationship between median household income `hh.income` and median housing value `house.value` by census tract. Explain how you decided which was the independent and which was the dependent variable. Describe any potential issues with your choice, if any.
+
+```{r}
+lm7 = lm(house.value ~ hh.income, data=df)
+summary(lm7)
 ```
 
-#### 6. Build a simple linear regression model that describes the relationship between median household income `hh.income` and median housing value `house.value` by census tract. Explain how you decided which was the independent and which was the dependent variable. Describe any potential issues with your choice, if any.  
-
-
-
+The independent variable is `hh.income` and the dependent variable is `house.value`. This is because intuitively how much one earns is the major factor of to what values of house one would buy. The potential issue with this choice is that the relationship between `hh.income` and `house.value` may not be linear, and the model may not be able to capture the relationship between the two variables.
+\FloatBarrier
 #### 7. For which census tracts in CT does your model perform well? Not as well? What do those census tracts have in common?
 
+```{r}
+plot(df$hh.income, df$house.value,
+      xlab = "Median Household Income",
+      ylab = "Median Housing Value",
+      main = "Median Housing Value vs. Median Household Income")
+abline(lm7, col="red")
+```
 
+The model performs well for census tracts with median household income below 150k. The model does not perform well for census tracts with median household income above 150k. The census tracts that the model performs well have in common that they have a linear relationship between `hh.income` and `house.value`. The census tracts that the model does not perform well have in common that they have a non-linear relationship between `hh.income` and `house.value`.
 
+One common feature of both groups is that in general `hh.income` and `house.value` are positively correlated.
+\FloatBarrier
 ## Part 3: Super Bowl predictions
 
-The Superbowl is the championship game of the National Football League (NFL). The game will likely be the most watched broadcast in the US this year (in 2023, the Superbowl has twice the viewership of the next most watched broadcast, according to https://www.sportico.com/law/analysis/2024/super-bowl-security-1234765332/). 
+The Superbowl is the championship game of the National Football League (NFL). The game will likely be the most watched broadcast in the US this year (in 2023, the Superbowl has twice the viewership of the next most watched broadcast, according to <https://www.sportico.com/law/analysis/2024/super-bowl-security-1234765332/>).
 
 Let's use our regression skills to predict the outcome of this year's Superbowl.
 
@@ -95,14 +151,31 @@ head(dd)
 sb = dd %>% filter(date=='2024-02-11')
 dd = dd %>% filter(date< '2024-02-11')
 ```
-
+\FloatBarrier
 #### 8. Build a model with `score` as the outcome and `ha` (home or away), `team`, and `opp` as the predictors, using only games played before the Super Bowl (the data frame `dd`). Are the linear regression assumptions satisfied?
 
+```{r}
+lm8 = lm(score ~ ha + team + opp, data=dd)
+summary(lm8)
+```
 
-#### 9. Use this model to predict the outcome of the Super Bowl. 
+```{r}
+par(mfrow = c(2,2))
+plot(lm8)
+```
 
+From the residual vs fitted plot, the residuals are generally normally randomly distributed around 0, which means the gaussian noise assumption is fulfilled.
+\FloatBarrier
+#### 9. Use this model to predict the outcome of the Super Bowl.
 
+```{r}
+sb_selected_feature = sb %>% select(ha, team, opp)
+head(sb_selected_feature)
+predict(lm8, newdata=sb_selected_feature, interval = "confidence", level = 0.95)
+```
+
+The model predicts that the away team (SF) will score 21.12 points, and the home team (KC) will score 19.35 points. SF is expected to win the game.
+\FloatBarrier
 #### 10. Suppose the betting odds say that the San Francisco 49ers (SF) are favored to win by 1.5 points. If you bet on the 49ers, and they win by 2 or more points, you win money, and if they win by 1 point or lose, you lose money. Should you bet on the 49ers? If you do this assignment after the Super Bowl, ignore the outcome when answering this question. :)
 
-
-
+No, because the expected mean values of the scores are 21.12 and 19.35 for SF and KC, respectively. The expected difference is 1.77, which is lower than 2.

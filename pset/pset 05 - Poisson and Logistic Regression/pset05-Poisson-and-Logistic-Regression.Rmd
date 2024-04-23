@@ -2,7 +2,9 @@
 title: "PSET 05 - Poisson and Logistic Regression"
 author: "S&DS 361"
 date: "Due 2024-03-28"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -112,10 +114,119 @@ We see mostly gray dots (shot attempts that weren't goals), but there are red do
 Find the observed proportion of goals for different subsets of `dist` and plot the result. Do these values appear to follow a logistic curve? Does the curve you found make sense given the overall proportion of goals in the data?
 
 
+**I might want to see the distribution of the distances first to make a decision on how will I group the distances.**
+
+```{r}
+## first let us find out the distribution of the distances
+d %>% 
+  ggplot(aes(x = dist)) +
+  geom_histogram(binwidth = 5, 
+                 color = pubbackgray) +
+  labs(title = "Distribution of distances", 
+       x = "Distance", 
+       y = "Frequency")
+
+```
+
+**Seems that binwidth = 5 is a good choice. I might just stick to this binwidth and try to plot the proportion of goals for each bin. **
+
+```{r}
+d = d %>% 
+  mutate(dist.group = cut(dist, 
+                          breaks = seq(0, 100, 5), 
+                          include.lowest = T))
+
+d %>%
+  group_by(dist.group) %>%
+  summarise(goals = sum(goal), 
+            attempts = n()) %>%
+  mutate(prop = goals/attempts) %>%
+  ggplot(aes(x = dist.group, 
+             y = prop)) +
+  geom_point() +
+  geom_line() +
+  labs(title = "Proportion of goals by distance", 
+       x = "Distance range", 
+       y = "Proportion of goals")
+
+```
+
+**The curve does not seem to follow a rigorous logistic S-curve, but it does have the trend of being an S-curve. So I'd say that we should be at least somewhat reasonable to use logistic regression here. This plot makes sense in terms of the data because the proportion of goals is higher for shots that are closer to the goal, and lower for shots that are farther away.**
+
+
+
 #### 2. Observed proportion of goals by `angle` and `abs.angle`. 
 
 Repeat the above question for `angle` and  `abs.angle`. Which one should you try in the model? Why? 
 
+**I think we should still begin with a exploration on the distribution of `angle` and `abs.angle`.**
+
+```{r}
+d %>% 
+  ggplot(aes(x = angle)) +
+  geom_histogram(binwidth = 20, 
+                 color = pubbackgray) +
+  labs(title = "Distribution of angles", 
+       x = "Angle", 
+       y = "Frequency")
+```
+
+```{r}
+d %>% 
+  ggplot(aes(x = abs.angle)) +
+  geom_histogram(binwidth = 10, 
+                 color = pubbackgray) +
+  labs(title = "Distribution of absolute angles", 
+       x = "Absolute Angle", 
+       y = "Frequency")
+
+```
+**Now I am about to use binwidth = 20 for `angle` and binwidth = 10 for `abs.angle`, this is because naturally `abs.angle` should be 2 times tighter than `angle`. Mathematically this makes sense.**
+
+```{r}
+d = d %>% 
+  mutate(angle.group = cut(angle, 
+                           breaks = seq(-90, 90, 20), 
+                           include.lowest = T),
+         abs.angle.group = cut(abs.angle, 
+                               breaks = seq(0, 90, 10), 
+                               include.lowest = T))
+
+
+d %>%
+  group_by(angle.group) %>%
+  summarise(goals = sum(goal), 
+            attempts = n()) %>%
+  mutate(prop = goals/attempts) %>%
+  ggplot(aes(x = angle.group, 
+             y = prop)) +
+  geom_point() +
+  geom_line() +
+  labs(title = "Proportion of goals by angle", 
+       x = "Angle range", 
+       y = "Proportion of goals")
+
+```
+
+```{r}
+
+d %>%
+  group_by(abs.angle.group) %>%
+  summarise(goals = sum(goal), 
+            attempts = n()) %>%
+  mutate(prop = goals/attempts) %>%
+  ggplot(aes(x = abs.angle.group, 
+             y = prop)) +
+  geom_point() +
+  geom_line() +
+  labs(title = "Proportion of goals by absolute angle", 
+       x = "Absolute Angle range", 
+       y = "Proportion of goals")
+
+
+```
+
+**We could tell from the first `angle` plot, there is not a huge impact on goal rate (or proportion of goals in the plots) on whether the player attacks from the left or right side. However, the second plot shows that the proportion of goals is higher for shots that are taken from the center of the ice (`abs.angle` near 0), and lower for shots that are taken from the sides of the ice (`abs.angle` near 90). Moreover, the second plot also roughly looks like a S-curve, even this is not a sharp match. So I would choose `abs.angle` as a predictor in the model.**
 
 #### 3. Build three logistic regression models that predict `goal` using the following predictors. Which model is "best"?  Why?
 
@@ -124,12 +235,124 @@ Repeat the above question for `angle` and  `abs.angle`. Which one should you try
 - Model 3: `dist` and `abs.angle`
 
 
+```{r}
+## Model 1
+
+model1 = glm(goal ~ dist, 
+             data = d, 
+             family = binomial)
+
+summary(model1)
+
+## Model 2
+
+model2 = glm(goal ~ abs.angle, 
+             data = d, 
+             family = binomial)
+
+summary(model2)
+
+## Model 3
+
+model3 = glm(goal ~ dist + abs.angle, 
+             data = d, 
+             family = binomial)
+
+summary(model3)
+```
+
+
+**From the summary of the three models, I prefer using the third model (both `dist` and `abs.angle` as predictors) because it has the lowest AIC value. This means that the third model is the best model among the three. Moreover, the third model has the most significant drop on the Null deviance to the Residual deviance, which means that the third model is the most effective model in explaining the data. **
+
+
 
 #### 4. Find the accuracy and error rate of each model, meaning, how often it correctly or incorrectly predicts the outcome. Also compute the AUC and log loss for all three models.  What do you notice? Which model would you use to predict the probability that a new shot will be a goal? 
+
+```{r}
+## Assessing the accuracy and error rates of the models
+library(Metrics)
+## Model 1
+pred1 = predict(model1, 
+                newdata = d, 
+                type = 'response')
+
+goal1 = ifelse(pred1 > 0.5, 1, 0)
+
+accuracy1 = mean(goal1 == d$goal)
+
+error_rate1 = 1 - accuracy1
+
+## Model 2
+
+pred2 = predict(model2, 
+                newdata = d, 
+                type = 'response')
+
+goal2 = ifelse(pred2 > 0.5, 1, 0)
+
+accuracy2 = mean(goal2 == d$goal)
+
+error_rate2 = 1 - accuracy2
+
+## Model 3
+
+pred3 = predict(model3, 
+                newdata = d, 
+                type = 'response')
+
+goal3 = ifelse(pred3 > 0.5, 1, 0)
+
+accuracy3 = mean(goal3 == d$goal)
+
+error_rate3 = 1 - accuracy3
+
+## AUC and log loss
+
+roc1 = roc(d$goal, pred1)
+
+roc2 = roc(d$goal, pred2)
+
+roc3 = roc(d$goal, pred3)
+
+
+
+
+log_loss1 = logLoss(d$goal, pred1)
+
+log_loss2 = logLoss(d$goal, pred2)
+
+log_loss3 = logLoss(d$goal, pred3)
+
+cat("The accuracy of model 1 is:", accuracy1, "; the error rate of model 1 is:", error_rate1, "The AUC of model 1 is:", roc1$auc, "The log loss of model 1 is:", log_loss1, "\n")
+
+cat("The accuracy of model 2 is:", accuracy2, "; the error rate of model 2 is:", error_rate2, "The AUC of model 2 is:", roc2$auc, "The log loss of model 2 is:", log_loss2, "\n")
+
+cat("The accuracy of model 3 is:", accuracy3, "; the error rate of model 3 is:", error_rate3, "The AUC of model 3 is:", roc3$auc, "The log loss of model 3 is:", log_loss3, "\n")
+
+
+
+
+```
+
+
+**Surprisingly, the accuracy and error rates of the three models are the same. However, the third model achieves the greatest AUC value among the three models. The log loss of the third model is also the lowest among the three models. This means that the third model is the best model to predict the probability that a new shot will be a goal.**
+
+
 
 
 
 #### 5. How are the accuracy, error rates, and proportion of 1's related?  Why are they related that way? How could you change your method of determining the predicted classes and obtain a different result?
+
+**Let's find out the proportion of 1's in the data.**
+
+```{r}
+proportion_1 = mean(d$goal)
+print(proportion_1)
+```
+
+
+**Now things are clear. The accuracy and error rates are negatively related because mathematically accuracy = 1 - error rate. The proportion of 1's in the data exactly equals to the error rate of all three models. This means all models are just predicting 0s for all shot attempts. Tracing back to problem 1 and 2 where we analyzed the data. Distance-wise, the highest goal rate zone is [0,5) with approximately 0.2 as the goal rate. Angle-wise, the highest goal rate zone is [0,10), with approximately 0.1 as the goal rate. This is a very low goal rate, so the models are just predicting 0s for all shot attempts. To obtain different results, we need to take a threshold of approximately 0.05-0.15 that fits the actual goal rate.**
+
 
 
 ## EV Stations
@@ -146,14 +369,118 @@ head(ev,2)
 
 Perform some data exploration and visualization that helps you learn about the data, with a focus on predicting the probability that a census tract has at least one Level 2 charging station. Discuss any notable observations. 
 
+**Before we start the data exploration, let's first pre-process the data a little bit.**
 
+```{r}
+# drop NA and mutate a new column to indicate whether a census tract has at least one Level 2 charging station
+
+ev = ev %>% 
+  drop_na() %>%
+  mutate(has_lev2 = ifelse(lev2 > 0, 1, 0)) %>%
+  mutate(has_lev2_factor = as.factor(has_lev2))
+
+```
+
+
+**Now let's start the data exploration. What could be related to whether a level2 ev charging station exists or not? I want to focus on 1. the average age (`age`) of the tract; 2. the population density (`pop.density`) of the tract; 3. the rescaled household value ('rescaled.house.value'); 4. the househola income (`hh.income`).**
+
+```{r}
+ev %>% 
+  ggplot(aes(x = age, 
+             y = has_lev2_factor)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of age by whether a Level 2 charging station exists", 
+       x = "Age", 
+       y = "Has Level 2 charging station")
+
+```
+
+```{r}
+
+ev %>% 
+  ggplot(aes(x = pop.density, 
+             y = has_lev2_factor)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of population density by whether a Level 2 charging station exists", 
+       x = "Population density", 
+       y = "Has Level 2 charging station")
+
+```
+
+```{r}
+
+ev %>% 
+  ggplot(aes(x = rescaled.house.value, 
+             y = has_lev2_factor)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of rescaled house value by whether a Level 2 charging station exists", 
+       x = "Rescaled house value", 
+       y = "Has Level 2 charging station")
+
+```
+
+```{r}
+
+ev %>% 
+  ggplot(aes(x = hh.income, 
+             y = has_lev2_factor)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of household income by whether a Level 2 charging station exists", 
+       x = "Household income", 
+       y = "Has Level 2 charging station")
+
+
+
+```
+
+
+**From the above plots, we could tell that the average age of the tract does not seem to have a significant impact on whether a Level 2 charging station exists or not. However, the population density of the tract, the rescaled house value, and the household income seem to have an impact on whether a Level 2 charging station exists or not. The population density of the tract, the rescaled house value, and the household income are higher for tracts that have a Level 2 charging station.**
 
 ### 7. Estimate the probability of at least one `lev2` station
 
 Estimate the probability that a census tract has at least one Level 2 charging station. Justify the information you use in the model. Briefly discuss the results and any takeaways.
 
+**This is a binary classification problem. I will use logistic regression to estimate the probability that a census tract has at least one Level 2 charging station. I will use the population density of the tract, the rescaled house value, and the household income as predictors in the model.**
+
+```{r}
+model = glm(has_lev2_factor ~ pop.density + rescaled.house.value + hh.income, 
+            data = ev, 
+            family = binomial)
+
+
+summary(model)
+
+```
+
+```{r}
+## Assessing the accuracy and error rates of the model
+
+pred = predict(model, 
+               newdata = ev, 
+               type = 'response')
+
+accuracy = mean(ifelse(pred > 0.5, 1, 0) == ev$has_lev2_factor)
+
+roc = roc(ev$has_lev2_factor, pred)
+
+cat("The accuracy of the model is:", accuracy, "The AUC of the model is:", roc$auc, "\n")
+
+### the actual probabilities of having at least one Level 2 charging station
+
+actual_prob = mean(ev$has_lev2)
+
+cat("The actual probability of having at least one Level 2 charging station is:", actual_prob, "\n")
+
+
+```
+
+
+**The major takeaway is that we still falls into the problem of having a extreme unbalanced dataset. The actual probability of having at least one Level 2 charging station is 0.9, which is very high. The model accuracy is the same as the actual probability, which means the model tends to predict everything to 1. This means that most the level2 ev charger is viral now in most regions, no matter if the tract has more/less population or the tract has a high/low average income.**
+
+
 
 ## Landcover classification
+
 
 For this part our goal is to use `NDVI` and `B7` to classify each location as `natforest`, `cropland`, `orchard`, or `builtup`.  Note that `landcover` is a categorical outcome with 4 categories, which isn't something we focused on in class. But not to worry, we'll be doing some of the work for you. 
 
@@ -190,6 +517,23 @@ one row per location, and each row has `ID`, mean `NDVI`, mean `B7`, and `landco
 
 Perform some data exploration and visualization that helps you learn about the data, with a focus on predicting `landcover`. Discuss any notable observations. Which `landcover` types will be harder/easier to classify based on what you learned?
 
+**Let me begin with a scatter plot of `NDVI` and `B7` with different colors for different `landcover` types.**
+
+```{r}
+
+d %>% 
+  ggplot(aes(x = NDVI, 
+             y = B7, 
+             color = landcover)) +
+  geom_point() +
+  labs(title = "Scatter plot of NDVI and B7 by landcover type", 
+       x = "NDVI", 
+       y = "B7")
+
+
+```
+
+**From the plot, we could tell that `builtup` and `cropland` are easier to classify because they are more separated from the other two types. `orchard` and `natforest` are harder to classify because they are more mixed with each other.**
 
 
 ### 9. Modeling 
@@ -229,6 +573,82 @@ Another approach is to build 4 logistic regression models, one for each `landcov
 Build these 4 logistic regression models, find the predicted probabilities for each class, and show that the estimated probabilities are similar to those from our multinomial logistic regression model above.  Also, find the sum of the estimated probabilities from the multinomial logistic regression model, and the sum of estimated probabilities from the 4 logistic regression models. Based on these results, what is one downside of using 4 logistic regression models instead of multinomial logistic regression?
 
 
+```{r}
+### builtup
+
+d$landcover_builtup = ifelse(d$landcover == "builtup", 1, 0)
+
+model_builtup = glm(landcover_builtup ~ NDVI + B7 + B7:NDVI, 
+                    data = d, 
+                    family = binomial)
+
+d$pred_builtup = predict(model_builtup, 
+                         newdata = d, 
+                         type = 'response')
+
+abs_builtup_diff = mean(abs(d$pred_builtup - d$mn1.builtup))
+
+
+### cropland
+
+d$landcover_cropland = ifelse(d$landcover == "cropland", 1, 0)
+
+model_cropland = glm(landcover_cropland ~ NDVI + B7 + B7:NDVI, 
+                    data = d, 
+                    family = binomial)
+
+d$pred_cropland = predict(model_cropland, 
+                         newdata = d, 
+                         type = 'response')
+
+abs_cropland_diff = mean(abs(d$pred_cropland - d$mn1.cropland))
+
+
+### natforest
+
+d$landcover_natforest = ifelse(d$landcover == "natforest", 1, 0)
+
+model_natforest = glm(landcover_natforest ~ NDVI + B7 + B7:NDVI, 
+                    data = d, 
+                    family = binomial)
+
+d$pred_natforest = predict(model_natforest, 
+                         newdata = d, 
+                         type = 'response')
+
+abs_natforest_diff = mean(abs(d$pred_natforest - d$mn1.natforest))
+
+
+### orchard
+
+d$landcover_orchard = ifelse(d$landcover == "orchard", 1, 0)
+
+model_orchard = glm(landcover_orchard ~ NDVI + B7 + B7:NDVI, 
+                    data = d, 
+                    family = binomial)
+
+d$pred_orchard = predict(model_orchard, 
+                         newdata = d, 
+                         type = 'response')
+
+abs_orchard_diff = mean(abs(d$pred_orchard - d$mn1.orchard))
+
+cat("The absolute difference between the estimated probabilities from the multinomial logistic regression model and the 4 logistic regression models are:", abs_builtup_diff, abs_cropland_diff, abs_natforest_diff, abs_orchard_diff, "\n")
+
+cat("The sum of estimated probabilities from the multinomial logistic regression model is:", sum(d$mn1.builtup + d$mn1.cropland + d$mn1.natforest + d$mn1.orchard), "\n")
+
+cat("The sum of estimated probabilities from the 4 logistic regression models is:", sum(d$pred_builtup + d$pred_cropland + d$pred_natforest + d$pred_orchard), "\n")
+
+cat('The sum of the absolute difference between the estimated probabilities from the multinomial logistic regression model and 1 is:', sum(abs(d$mn1.builtup + d$mn1.cropland + d$mn1.natforest + d$mn1.orchard - 1)), "\n")
+
+
+cat('The sum of the absolute difference between the estimated probabilities from the 4 logistic regression models and 1 is:', sum(abs(d$pred_builtup + d$pred_cropland + d$pred_natforest + d$pred_orchard - 1)), "\n")
+
+
+```
+**From the results, we see that the difference between the multinomial logistic regression model and the 4 logistic regression models is very small. The sum of the estimated probabilities from the multinomial logistic regression model is 400, and the sum of the estimated probabilities from the 4 logistic regression models is also 400, which is good. However, if we take the sum of the absolute difference of the sum of the probabilities of one specific location and 1, we see that the multinomial model is much better than the 4 separate models. Hence the downside of using 4 models is that the sum of probabilities of each type is not guaranteed to be 1.**
+
+
 
 ## Simulation
 
@@ -246,3 +666,37 @@ d. Fit a Poisson regression model to the data and report the estimated coefficie
 
 e. Plot a scatter plot of $y$ versus $x$, and add a smooth curve to the plot. Does this visualization look as you would have expected? Do the Poisson regression assumptions appear to hold? Why or why not? 
 
+**Let's begin from a,b,c.**
+
+```{r}
+
+set.seed(123)
+
+x = runif(10000, 0, 1)
+
+lambda = exp(1 + 2*x)
+
+y = rpois(10000, lambda)
+
+```
+
+**Proceed to d.**
+
+```{r}
+df <- data.frame(x = x, y = y)
+m <- glm(y ~ x, data = df, family = poisson)
+summary(m)
+
+```
+**We tell that the Poisson model estimates the coefficient of x to be 2.006677 and the intercept to be 0.992966. This is exactly what we expect because we generated the data using $\lambda = e^{1 + 2x}$.**
+
+
+**Now let's move to e.**
+
+```{r}
+ggplot(df, aes(x = x, y = y)) +
+    geom_point() +
+    geom_smooth(method = "glm", method.args = list(family = poisson), se = F, color = "red")
+```
+
+**The visualization looks as expected. The assumptions for Poisson regression appear to be satisfied. The first assumption is that the response variable is a independently distributed non-negative integer. Given that the way we generate y is `y = rpois(10000, lambda)`, this assumption is automatically satisfied. The second assumption is that the mean of the response variable is equal to the variance of the response variable. This is satisfied by looking the plot, as the mean increases, the variance also increases approximately the same amount. The third assumption is that the response variable is Poisson distributed, this is also automatically satisfied by the way we generate y. The last assumption is that the logarithm of the mean of the response variable is linear of the predict variable, which is also automatically satisfied.**

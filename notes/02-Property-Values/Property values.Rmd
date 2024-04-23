@@ -10,6 +10,11 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r}
+```
+
+
+```{r}
+library(ggplot2)
 d = read.csv('data/branford.csv')
 head(d,2)
 ```
@@ -58,6 +63,7 @@ In-class exercise.
 ## log(value) vs beds
 
 ```{r}
+<<<<<<< Updated upstream
 ggplot(d, 
        aes(x = beds, 
            y = log(value))) + 
@@ -77,7 +83,36 @@ ggplot(d,
   geom_smooth(color = pubblue) +
   geom_smooth(method = 'lm', 
               color = pubred)
+=======
+## build a linear model based on d$value and d$good and d$grade
+>>>>>>> Stashed changes
 
+lm1 = lm(value ~ good, data=d)
+summary(lm1)
+```
+```{r, fig.width=10, fig.height = 10}}
+par(mfrow=c(2,2))
+plot(lm1)
+```
+
+```{r}
+```
+
+```{r}
+ggplot(d, aes(x=good, y=value)) + 
+  geom_point(shape = 1, color = 'black') +
+  geom_smooth(method = 'lm', formula = y ~ x, se = F, color = 'red')
+```
+
+
+```{r}
+# reorder the grade factor
+d$grade = factor(d$grade, levels = c('A ++', 'A +', 'A', 'B +', 'B', 'B -', 'C +', 'C', 'C -', 'D +', 'D'))
+ggplot(d, aes(x=grade, y=value)) + 
+  geom_point(shape = 1, color = 'black') +
+  stat_summary(fun.y = mean, geom = 'point', color = 'red', size = 3) +
+  stat_summary(fun.y = mean, geom = 'line', color = 'red', size = 1)
+  
 ```
 
 Instead of making a separate scatter plot for each predictor, we can use `pivot_longer` and `facet_wrap` to quickly make a scatter plot (or other type of plot) of each predictor and `log(value)`. First we'll select some numeric columns to plot with `log(value)`.

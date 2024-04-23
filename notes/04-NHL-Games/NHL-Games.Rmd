@@ -234,6 +234,7 @@ g = ggplot(dh,
                y = score))+
   geom_jitter(alpha  = 0.3, 
               height = 0.3)+
+  geom_smooth(color = pubred)
   
 
 g %>% 
@@ -255,6 +256,11 @@ head(dh)
 Let's plot the distribution of score separately for every bin. 
 
 ```{r}
+ggplot(data = dh %>% filter(!is.na(bin)), 
+       aes(x = score))+
+  geom_histogram(binwidth = 1) + 
+  facet_wrap(~bin, 
+             scales = 'free_y')
 
 
 ```
@@ -280,6 +286,9 @@ ggplot(data = dh %>% filter(!is.na(bin)),
        aes(x = score))+
   geom_histogram(binwidth = 1, 
                  fill = 'lightgray') + 
+  geom_vline(data = bin.means,
+             aes(xintercept = mean.score), 
+             color = 'red')+
 
   
   facet_wrap(~bin, 
@@ -291,7 +300,7 @@ ggplot(data = dh %>% filter(!is.na(bin)),
 
 ## Animating the distribution of `score` for changing subsets
 
-```{r}
+```{r, eval=FALSE}
 n.frames = length(seq(1.5, 3.7, by=0.1))
 
 ## lines
@@ -471,6 +480,10 @@ ggplot(dh,
 We can use Poisson regression when out outcome is count data that follows a Poisson distribution. Let's use Poisson regression for predicting hockey game scores
 
 ```{r}
+glm1 = glm(score ~ avg.score.prev, 
+           data = dh, 
+           family = 'poisson')
+summary(glm1)
 
 ```
 
@@ -489,7 +502,7 @@ Note that Poisson is a multiplicative model and the coefficients have a differen
 Let's check the predicted scores for these models. 
 
 ```{r}
-
+dh$glm1.pred = predict(glm1, newdata=dh, type='response')
 
 dh$res   = dh$glm1.pred - dh$score
 dh$diff1 = dh$glm1.pred - dh$lm1.pred
@@ -517,6 +530,11 @@ ggplot(dh,
   geom_jitter(alpha  = 0.3, 
               height = 0.3, 
               color  = publightgray)+
+  geom_smooth(method = 'lm',
+              color = pubred) +
+  geom_smooth(method = 'glm',
+              color = pubblue, 
+              method.args = list(family='poisson'))
 
 ```
 
@@ -603,6 +621,13 @@ Let's build models with `ha`, `team`, and `opp`, like we did with basketball. We
 **Do this for only the most recent season.** 
 
 ```{r}
+lm2 = lm(score ~  ha + team + opp, 
+         data = dh, filter(season == 2022)) 
+summary(lm2)
+glm2 = glm(score ~  ha + team + opp, 
+           data = dh, 
+           family = 'poisson', filter(season == 2022))
+summary(glm2)
 
 
 ```

@@ -90,10 +90,7 @@ g = ggplot(dg,
        aes(fill = hh.income)) + 
   geom_sf(show.legend = F) 
 
-g %>% pub('map') ## if this gives an error, re-install pubtheme 
-                 ## devtools::install_github("bmacGTPM/pubtheme")
-                 ## and remove and add the package
-                 ## or comment this out and just run `g`
+g 
 
 ```
 
